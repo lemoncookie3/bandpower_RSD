@@ -18,7 +18,7 @@ class RSD_covariance():
         self.b=2.0
         self.f=0.74
         self.Vs= 5.0*10**9 # survey volume
-        self.s= 0.0  # sigma in Power spectrum
+        self.s= 3.5  # sigma in Power spectrum
         self.nn=3.0 * 10**(-4) # shot noise : \bar{n}
 
         # k scale range
@@ -47,7 +47,7 @@ class RSD_covariance():
         
         self.mulist = np.linspace(-1.,1.,self.n3)
         
-        self.subN = 11 #101 for Reid
+        self.subN = 51 #101 for Reid
         subN = self.subN
         
         self.skbin = np.logspace(np.log10(self.KMIN),np.log10(self.KMAX), subN * self.n + 1, base=10) #For Reid, delete '+1'
@@ -71,8 +71,8 @@ class RSD_covariance():
         \n Fractional Error for parameter b, f \
         \n z = 0.55 \n number of k bins n ={}, kmax = {}\
         \n number of r bins n2 = {} \
-        \n dlnr = {}, dlnk={} \
-        \n ---------------------------------------------------'.format(self.n, self.KMAX, self.n2, np.log(self.rlist[1]/self.rlist[2]),np.log(self.klist[1]/self.klist[2]) )
+        \n dlnr = {}, dlnk={}, sdlnk={} \
+        \n ---------------------------------------------------'.format(self.n, self.KMAX, self.n2, np.log(self.rlist[1]/self.rlist[2]),np.log(self.klist[1]/self.klist[2]), self.sdlnk[2] )
 
 
     def MatterPower(self, file):

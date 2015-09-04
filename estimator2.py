@@ -29,11 +29,11 @@ KMIN = 0.0001
 KMAX = 502.32
 
 # r scale
-RMIN = 29. #29. # 6. #29. # 24. #0.1 for Reid   #1.15 * np.pi / self.kmax
-RMAX = 200.#200.  #628.32 # for Reid  #1.15 * np.pi / self.kmin
+RMIN = 24. # 6. #29. # 24. #0.1 for Reid   #1.15 * np.pi / self.kmax
+RMAX = 152. #200.  #628.32 # for Reid  #1.15 * np.pi / self.kmin
 
-kN = 61 # converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
-rN = 51  #101 for Reid # number of r bins
+kN = 61  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
+rN = 201  #101 for Reid # number of r bins
 
 RSDPower = RSD_covariance(KMIN, KMAX, RMIN, RMAX, kN, rN)
 file = open('matterpower_z_0.55.dat')
@@ -50,12 +50,13 @@ Linear_plot2(RSDPower.kcenter,RSDPower.skcenter, RSDPower.RealPowerBand, ['avgP'
 
 rcut_max = len(RSDPower.rcenter)-1
 rcut_min = 0 #25#len(RSDPower.rcenter)-1
-kcut_min = 21 #21 #12 # 45 #150 #90#104
-kcut_max = 31 #31 #len(RSDPower.kmax)-1 #24  #90
+kcut_min = 18 #12 # 45 #150 #90#104
+kcut_max = 29 # len(RSDPower.kmax)-1 #24  #90
 
-# 21,31 (61) for BAO only
+# 21,31 (61) 45, 73 (151) for BAO only
 # 18, 29(61) for BAO+RSD
 # 12, 24(41) for big scale and small scale
+
 
 print "kcut_min :", RSDPower.kmin[kcut_min], "  kcut_max :", RSDPower.kmax[kcut_max]
 print "rcut_min :", RSDPower.rmin[rcut_max], "  rcut_max :", RSDPower.rmax[rcut_min]
@@ -237,7 +238,7 @@ def error():
                                             np.concatenate((Xizeros,Xizeros,dxip4), axis=1)),axis=0 )
                                             
     Derivatives = np.concatenate((derivative_P,derivative_correl_avg), axis=1)
-    
+
     
 
     # for 3 modes
@@ -297,20 +298,20 @@ def error():
     Contour_plot( RSDPower.kcenter, CrossCoeff( k_base, inv(Fisher_bandpower_nf)), pdfname='Cnf.pdf' )
     """
 
-    """ fractional error for bandpower """
+    """ fractional error for bandpower 00 """
     error_P = FractionalErrorBand( bandpower_base, C_matrix3PP_total)[0:len(RSDPower.kcenter)]
     error_Xi = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower_Xi))[0:len(RSDPower.kcenter)]
     error_Ctot = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower))[0:len(RSDPower.kcenter)]
     error_Cnf = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower_nf))[0:len(RSDPower.kcenter)]
 
-    
+
     """ bandpower error linear plots """
     makedirectory('plots/RSD/band_error')
-    title = 'Fractional Error \n  k = ({:>3.4f}, {:>3.4f}), r = ({:>0.4f}, {:>6.2f}), dlnr = {:>3.4f}, dlnk = {:>3.4f})'\
-.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.dlnr, RSDPower.dlnk)
-    pdfname = 'plots/RSD/band_error/fractional_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'\
+    title = 'Fractional Error, l=0 \n  k = ({:>3.4f}, {:>3.4f}), r = ({:>0.4f}, {:>6.2f}) \n dlnr = {:>3.4f}, dlnk = {:>3.4f}, sdlnk = {:>3.4}'\
+.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.dlnr, RSDPower.dlnk, RSDPower.sdlnk[2])
+    pdfname = 'plots/RSD/band_error/fractional00_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'\
 .format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
-    pdfname2 = 'plots/RSD/band_error/mag_fractional_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'\
+    pdfname2 = 'plots/RSD/band_error/mag_fractional00_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'\
 .format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
     """
     # full plot
@@ -337,13 +338,18 @@ def error():
     FisherC_nf = FisherProjection(XP, inv(Fisher_bandpower_nf))
     FisherC = FisherProjection(XP, inv(Fisher_bandpower))
     
-    # Fisher, all modes, s marginalized
+    # Fisher, two modes, s marginalized
     FisherPP2 = FisherProjection(XP2_cut, C_matrix2PP)
     FisherXi2 = FisherProjection(XP2, inv(Fisher_bandpower_Xi2))
     FisherC2_nf = FisherProjection(XP2, inv(Fisher_bandpower2_nf))
     FisherC2 = FisherProjection(XP2, inv(Fisher_bandpower2))
     
-    
+    # Fisher, all modes, s determined
+    FisherPP_d = FisherProjection(XP_cut[0:2,:], C_matrix3PP)
+    FisherXi_d = FisherProjection(XP[0:2,:], inv(Fisher_bandpower_Xi))
+    FisherC_nf_d = FisherProjection(XP[0:2,:], inv(Fisher_bandpower_nf))
+    FisherC_d = FisherProjection(XP[0:2,:], inv(Fisher_bandpower))
+
     
     Cov_PP = inv(FisherPP)
     Cov_Xi = inv(FisherXi)
@@ -355,7 +361,12 @@ def error():
     Cov_C2_nooff = inv(FisherC2_nf)
     Cov_C2 = inv(FisherC2)
 
-    
+    Cov_PP_d = inv(FisherPP_d)
+    Cov_Xi_d = inv(FisherXi_d)
+    Cov_C_nooff_d = inv(FisherC_nf_d)
+    Cov_C_d = inv(FisherC_d)  
+
+  
     print '- - - - - - - - - - - - - - - - -'
     print '  Cov_PP :', np.sum(Cov_PP)
     print '  Cov_Xi :', np.sum(Cov_Xi)
@@ -366,14 +377,21 @@ def error():
     print '- - - - - - - - - - - - - - - - -'
     
     makedirectory('plots/RSD/ellipse')
+    # ellipse, all modes, marginalized
     title = 'Confidence Ellipse for b and f, l = 0,2,4 \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
     pdfname = 'plots/RSD/ellipse/ConfidenceEllipseTotal_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
     labellist = ['$C_{P}$','$C_{Xi}$','$C_{nooff}$','$C_{total}$']
     confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP[0:2,0:2], Cov_Xi[0:2,0:2], Cov_C_nooff[0:2,0:2], Cov_C[0:2,0:2], title = title, pdfname = pdfname)
-
+    # ellipse, two modes, marginalized
     title2 = 'Confidence Ellipse for b and f, l = 0,2 \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
     pdfname2 = 'plots/RSD/ellipse/ConfidenceEllipseTwomodes_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
-    confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP[0:2,0:2], Cov_Xi[0:2,0:2], Cov_C_nooff[0:2,0:2], Cov_C[0:2,0:2], title = title2, pdfname = pdfname2)
+    confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP2[0:2,0:2], Cov_Xi2[0:2,0:2], Cov_C2_nooff[0:2,0:2], Cov_C2[0:2,0:2], title = title2, pdfname = pdfname2)
+    # ellipse, all modes, determined
+    title3 = 'Confidence Ellipse for b and f, l = 0,2,4  ($\sigma$ determined) \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
+    pdfname3 = 'plots/RSD/ellipse/ConfidenceEllipseTotal_magi_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
+    labellist = ['$C_{P}$','$C_{Xi}$','$C_{nooff}$','$C_{total}$']
+    confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP_d, Cov_Xi_d, Cov_C_nooff_d, Cov_C_d, title = title3, pdfname = pdfname3)
+
 
 
 def Only_ellipse():
