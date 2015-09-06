@@ -25,15 +25,18 @@ from covariance_class2 import *
 
 #   Initialization
 
+print "estimator 2"
+
+
 KMIN = 0.0001
 KMAX = 502.32
 
 # r scale
-RMIN = 24. # 6. #29. # 24. #0.1 for Reid   #1.15 * np.pi / self.kmax
-RMAX = 152. #200.  #628.32 # for Reid  #1.15 * np.pi / self.kmin
+RMIN = 0.1 # 6. #29. # 24. #0.1 for Reid   #1.15 * np.pi / self.kmax
+RMAX = 180. #200.  #628.32 # for Reid  #1.15 * np.pi / self.kmin
 
-kN = 61  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
-rN = 201  #101 for Reid # number of r bins
+kN = 31  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
+rN = 101  #101 for Reid # number of r bins
 
 RSDPower = RSD_covariance(KMIN, KMAX, RMIN, RMAX, kN, rN)
 file = open('matterpower_z_0.55.dat')
@@ -50,11 +53,11 @@ Linear_plot2(RSDPower.kcenter,RSDPower.skcenter, RSDPower.RealPowerBand, ['avgP'
 
 rcut_max = len(RSDPower.rcenter)-1
 rcut_min = 0 #25#len(RSDPower.rcenter)-1
-kcut_min = 18 #12 # 45 #150 #90#104
-kcut_max = 29 # len(RSDPower.kmax)-1 #24  #90
+kcut_min = 0 #12 # 45 #150 #90#104
+kcut_max = len(RSDPower.kmax)-1 #24  #90
 
-# 21,31 (61) 45, 73 (151) for BAO only
-# 18, 29(61) for BAO+RSD
+# 21,31 (61) 45, 73 (151) for BAO only (k : 0.02 ~ 0.3)
+# 18, 29(61) for BAO+RSD (k: 0.01 ~ 0.2))
 # 12, 24(41) for big scale and small scale
 
 
@@ -85,7 +88,7 @@ dxip4 = RSDPower.derivative_Xi_band(4.0)[:,rcut_min:rcut_max+1]
 #covariance matrix============================================================
 
 #calling function for covariance matrix components Cp_ll'
-
+"""
 covariance_PP00 = np.array(RSDPower.RSDband_covariance_PP(0.0,0.0))
 covariance_PP02 = np.array(RSDPower.RSDband_covariance_PP(0.0,2.0))
 covariance_PP04 = np.array(RSDPower.RSDband_covariance_PP(0.0,4.0))
@@ -105,6 +108,7 @@ covariance_PXi24 = np.array(RSDPower.RSDband_covariance_PXi(2.0,4.0))
 covariance_PXi40 = np.array(RSDPower.RSDband_covariance_PXi(4.0,0.0))
 covariance_PXi42 = np.array(RSDPower.RSDband_covariance_PXi(4.0,2.0))
 covariance_PXi44 = np.array(RSDPower.RSDband_covariance_PXi(4.0,4.0))
+"""
 
 #calling function for covariance matrix components Cxi_ll'
 
@@ -366,6 +370,8 @@ def error():
     Cov_C_nooff_d = inv(FisherC_nf_d)
     Cov_C_d = inv(FisherC_d)  
 
+
+
   
     print '- - - - - - - - - - - - - - - - -'
     print '  Cov_PP :', np.sum(Cov_PP)
@@ -418,11 +424,6 @@ def Only_ellipse():
     labellist = ['$C_{P}$','$C_{Xi}$','$C_{nooff}$','$C_{total}$']
     confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP, Cov_Xi, Cov_C_nooff, Cov_C, title = title, pdfname = pdfname)
 
-error()
-#Only_ellipse()
-
-stop
-
 
 
 def error_only_CP(l):
@@ -469,26 +470,12 @@ def error_only_Cxi(l):
     C_matrix3 = CombineCovariance3(l_det, matricesXi)
     C_matrix2 = CombineCovariance2(l_det, matricesXi)
 
-    Xi = np.concatenate(( np.concatenate((dxip0,Xizeros,Xizeros), axis=0),\
-                         np.concatenate((Xizeros,dxip2,Xizeros), axis=0),\
-                         np.concatenate((Xizeros,Xizeros,dxip4), axis=0)),axis=1 )
-    Xi2 = np.concatenate(( np.concatenate((dxip0,Xizeros), axis=0),\
-                         np.concatenate((Xizeros,dxip2), axis=0)),axis=1 )
+    Xi = np.concatenate(( np.concatenate((dxip0,Xizeros,Xizeros), axis=0),np.concatenate((Xizeros,dxip2,Xizeros), axis=0), np.concatenate((Xizeros,Xizeros,dxip4), axis=0)),axis=1 )
+    Xi2 = np.concatenate(( np.concatenate((dxip0,Xizeros), axis=0), np.concatenate((Xizeros,dxip2), axis=0)),axis=1 )
     XP, XP2 = CombineDevXi(l, matrices2P)
-
-
-    print np.shape(Xi)
-    print np.shape(C_matrix3)
-    print C_matrix3
-    print np.shape(XP)
     
     Fisher_bandpower3 = FisherProjection(Xi, C_matrix3)[0:l+1,0:l+1]
     Fisher_bandpower2 = FisherProjection(Xi2, C_matrix2)[0:l+1,0:l+1]
-
-
-    print np.shape(Fisher_bandpower3)
-    print np.shape(Fisher_bandpower2)
-    print XP
     
     Fisher_marginal = FisherProjection(XP, inv(Fisher_bandpower3))
     Fisher_determin = Fisher_marginal[0:2,0:2] #FisherProjection(Xi2, C_matrix2)
@@ -506,11 +493,7 @@ def error_only_Cxi(l):
     Cov_determin = inv(Fisher_determin)
     Cov_marginal2 = inv(Fisher_marginal2)
     Cov_determin2 = inv(Fisher_determin2)
-    """
-    labellist = ['3 modes, marginalized','3 modes, determined','2 modes, marginalized','2 modes, determined']
-    pdfname = 'plots/XiConfidence_rN{}.pdf'.format(RSDPower.n2)
-    confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_marginal[0:2,0:2], Cov_determin, Cov_marginal2[0:2,0:2],Cov_determin2, pdfname = pdfname )
-    """
+
     return RSDPower.rcenter[l], error_b_determin, error_f_determin, error_b_marginal, error_f_marginal, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2
 
 
@@ -689,7 +672,37 @@ def error_Total( kcut_min ,kcut_max ):
     
     DAT = np.column_stack(( Cov_PP, Cov_Xi, Cov_C_nooff, Cov_C ))
     np.savetxt(filename, DAT, delimiter=" ", fmt="%s")
-    print "cov data saved :", filename
+
+
+
+def Reid_step2(l):
+    
+    matricesXi = [covariance00, covariance02, covariance04, np.transpose(covariance02), covariance22, covariance24,np.transpose(covariance04), np.transpose(covariance24), covariance44]
+    
+    matrices2P = [dPb0, dPb2, dPb4, dPf0, dPf2, dPf4, dPs0, dPs2, dPs4]
+    
+    C_matrix3 = CombineCovariance3(l, matricesXi)
+    C_matrix2 = CombineCovariance2(l, matricesXi)
+    
+    """ dxi/dp bandpower derivatives """
+    zeros = np.zeros((len(RSDPower.kcenter),len(RSDPower.rcenter)))
+    derivative_correl_avg = np.concatenate(( np.concatenate((dxip0,zeros,zeros), axis=0),\
+                                            np.concatenate((zeros,dxip2,zeros), axis=0),\
+                                            np.concatenate((zeros,zeros,dxip4), axis=0)),axis=1 )
+                                            
+    Fisher_bandpower_Xi = FisherProjection(derivative_correl_avg, C_matrix3)
+    
+    """ dP/dq"""
+    XP, XP2 = CombineDevXi(l, matrices2P)
+    FisherXi = FisherProjection(XP, inv(Fisher_bandpower_Xi))
+    
+    error_b_marginal, error_f_marginal = FractionalError( RSDPower.b, RSDPower.f, inv(FisherXi))
+
+    rr = 1.15 * np.pi/RSDPower.kcenter[l]
+    
+    return rr, error_b_marginal, error_f_marginal
+
+
 
 
 """
@@ -709,15 +722,19 @@ stop
 
 error_only_Cxi = vectorize(error_only_Cxi)
 error_only_CP = vectorize(error_only_CP)
+Reid_step2 = vectorize(Reid_step2)
 
 numberlist = np.arange(1,len(RSDPower.kcenter))
+rr, error_b_marginal, error_f_marginal = Reid_step2(numberlist)
+    
+#rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2 = error_only_Cxi(numberlist)
 
-rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal\
-    ,error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2 = error_only_Cxi(numberlist)
+DAT = np.column_stack((rr, error_b_marginal, error_f_marginal))
+print DAT
 
+stop
 
-DAT = np.column_stack((rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal))
-DAT2 = np.column_stack((rr, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2))
+#DAT2 = np.column_stack((rr, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2))
 
 
 
