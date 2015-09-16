@@ -1322,30 +1322,13 @@ class RSD_covariance():
 
 
     def RSD_covariance_Allmodes(self):
-    #================================================================
-    #
-    #   < Function for calculating components of covariance matrix >
-    #
-    #   From klist, rlist, Pmlist, construct 2 or 3 dimensional array
-    #   passing through whole power spectrum function and integrate
-    #   along k axis.
-    #   This function calls function 'sbess' from sbess fortran module and
-    #   fuction 'eval_legendre' legen fortran module/
-    #   For compiling, read 'readme.txt'
-    #
-    #   version2. modified Feb 13, 2015 by Sujeong Lee
-    #
-    #
-    #   Output : submatrices C_ll' for each modes (l,l' = 0,2,4)
-    #            size of each matrix is (# of r bins) x (# of r bins)
-    #
-    #   C_ll' = <X_l(ri)X_l'(rj)>
-    #
-    #
-    #=================================================================
     
-        #from scipy.special import eval_legendre
-        from scipy.integrate import quad,simps
+        """ Output : submatrices C_ll' for each modes (l,l' = 0,2,4)
+                size of each matrix is (# of r bins) x (# of r bins)
+    
+           C_ll' = <X_l(ri)X_l'(rj)> """
+
+        from scipy.integrate import simps
         from numpy import zeros, sqrt, pi, exp
         import cmath
         I = cmath.sqrt(-1)
@@ -1406,27 +1389,22 @@ class RSD_covariance():
         R_processes = [Process(target=Rintegral, args=(R_queue, z[0], z[1])) for z in zip(range(6), inputs)]
         for p in R_processes:
             p.start()
-            #for p in R_processes:
+        #for p in R_processes:
             #p.join()
         Rintegrals = [R_queue.get() for p in R_processes]
-        for p in R_processes:
-            p.terminate()
+            #for p in R_processes:
+            #p.terminate()
 
         Rintegrals.sort()
         Rintegrallist = [R[1] for R in Rintegrals]
         
-        Rintegral00 = Rintegrallist[0]
+        Rintegral00 = Rintegrallist[0] # 1D
         Rintegral02 = Rintegrallist[1]
         Rintegral04 = Rintegrallist[2]
         Rintegral22 = Rintegrallist[3]
         Rintegral24 = Rintegrallist[4]
         Rintegral44 = Rintegrallist[5]
-        
-        
-        #print "Rintegral end"
-        # constructing 3 dimension matrix
     
-        #matrix1,matrix2,matrix3 = np.mgrid[0:len(skcenter),0:len(rcenter),0:len(rcenter)]
         matrix4,matrix5 = np.mgrid[0:len(rcenter),0:len(rcenter)]
         rlistmatrix1 = rcenter[matrix4] # vertical
         rlistmatrix2 = rcenter[matrix5] # horizontal
@@ -1437,16 +1415,14 @@ class RSD_covariance():
         rmaxmatrix = rmax[matrix4] # vertical
         rmaxmatrix2 = rmax[matrix5] # horizontal
     
-    
         Vir1 = 4 * pi * rlistmatrix1**2 * dr1 * (1. + 1./12 * (dr1/rlistmatrix1)**2)
         Vir2 = 4 * pi * rlistmatrix2**2 * dr2 * (1. + 1./12 * (dr2/rlistmatrix2)**2)
         Vi = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2) #1d array
 
         print 'AvgBessel'
         
-        
         def AvgBessel_q(q, order, (l, skcenter, rmin, rmax)):
-            Avg = [avgBessel(l,k,rmin,rmax) for k in skcenter] #2D
+            Avg = [avgBessel(l,k,rmin,rmax) for k in skcenter] #2D (kxr)
             q.put((order,Avg))
     
         
@@ -1458,24 +1434,33 @@ class RSD_covariance():
             pB.start()
         Bessels = [B_queue.get() for pB in B_processes]
         Bessels.sort()
-        Bessel_list = [ B[1] for B in Bessels]
+        Bessel_list = [ B[1] for B in Bessels] #2D bessel, (kxr)
         print 'bessel_process'
-        
-        avgBesselmatrix0 = np.array([ Bessel_list[0] for r in rcenter]).swapaxes(0,1)
-        avgBesselmatrix2 = np.array([ Bessel_list[1] for r in rcenter]).swapaxes(0,1)
-        avgBesselmatrix4 = np.array([ Bessel_list[2] for r in rcenter]).swapaxes(0,1)
-        
+
+        """
+        avgBesselmatrix03D = np.array([ Bessel_list[0] for r in rcenter]).swapaxes(0,1)
+        avgBesselmatrix23D = np.array([ Bessel_list[1] for r in rcenter]).swapaxes(0,1) #3D (kxrxr)
+        avgBesselmatrix43D = np.array([ Bessel_list[2] for r in rcenter]).swapaxes(0,1)
+        """
+
+        avgBesselmatrix0 = np.array(Bessel_list[0]) #2D, (kxr)
+        avgBesselmatrix2 = np.array(Bessel_list[1])
+        avgBesselmatrix4 = np.array(Bessel_list[2])
 
         print 'Add'
-        
         matrix1, matrix2 = np.mgrid[0:len(skcenter), 0:len(rcenter)]
         Volume_double = Vir1 * Vir2
+
+
         def FirstSecond(queue, order, (l1, l2, result, avgBessel1, avgBessel2)):
         
             Rint_result = result[matrix1] # 2D
-
-            relist = [ simps(Rint_result * avgBessel1[:, :, i] * avgBessel2[:, i, :], skcenter, axis=0) for i in range(len(rcenter)/2) ]
-        
+            
+            relist = []
+            for i in range(len(rcenter)/2):
+                avgBmatrix = np.array(avgBessel1[:, i])[matrix1]
+                re = simps(Rint_result * avgBmatrix * avgBessel2, skcenter, axis=0)
+                relist.append(re)
             FirstTerm = relist/ Volume_double[0:len(rcenter)/2,:] #2D
             if l1 == l2:
                 Last = (2./Vs) * (2*l1+1)/nn**2 / Vi #1d array
@@ -1483,16 +1468,20 @@ class RSD_covariance():
                 np.fill_diagonal(LastTermmatrix,Last)
                 LastTerm = LastTermmatrix[0:len(rcenter)/2,:]
             else : LastTerm = 0.
-            
+        
             re = FirstTerm+LastTerm
             queue.put((order,re))
-        
-        
+
+
         def FirstSecond2(queue, order, (l1, l2, result, avgBessel1, avgBessel2)):
-            
+    
             Rint_result = result[matrix1] # 2D
-            relist = [ simps(Rint_result * avgBessel1[:, :, i] * avgBessel2[:, i, :], skcenter, axis=0) for i in range(len(rcenter)/2, len(rcenter)) ]
-            
+    
+            relist = []
+            for i in range(len(rcenter)/2, len(rcenter)):
+                avgBmatrix = np.array(avgBessel1[:, i])[matrix1]
+                re = simps(Rint_result * avgBmatrix * avgBessel2, skcenter, axis=0)
+                relist.append(re)
             FirstTerm = relist/ Volume_double[len(rcenter)/2:len(rcenter),:] #2D
             if l1 == l2:
                 Last = (2./Vs) * (2*l1+1)/nn**2 / Vi #1d array
@@ -1500,11 +1489,11 @@ class RSD_covariance():
                 np.fill_diagonal(LastTermmatrix,Last)
                 LastTerm = LastTermmatrix[len(rcenter)/2:len(rcenter),:]
             else : LastTerm = 0.
-            
+    
             re = FirstTerm+LastTerm
             queue.put((order,re))
-            
-            
+
+        
         F_inputs = (( 0.0, 0.0, Rintegral00, avgBesselmatrix0, avgBesselmatrix0),( 0.0, 2.0, Rintegral02,  avgBesselmatrix0, avgBesselmatrix2),(0.0, 4.0, Rintegral04, avgBesselmatrix0, avgBesselmatrix4 ),(2.0, 2.0, Rintegral22, avgBesselmatrix2, avgBesselmatrix2 ),(2.0, 4.0, Rintegral24, avgBesselmatrix2, avgBesselmatrix4 ),(4.0, 4.0, Rintegral44, avgBesselmatrix4, avgBesselmatrix4))
         
         F_queue = Queue()
@@ -1524,8 +1513,7 @@ class RSD_covariance():
         self.covariance22 = np.vstack((Total[3], Total[9]))
         self.covariance24 = np.vstack((Total[4], Total[10]))
         self.covariance44 = np.vstack((Total[5], Total[11]))
-    
-    
+
         print 'RSD_shell_covariance_AllModes is finished'
         return self.covariance00, self.covariance02, self.covariance04, self.covariance22, self.covariance24, self.covariance44
 
