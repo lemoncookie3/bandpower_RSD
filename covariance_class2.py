@@ -183,7 +183,6 @@ class RSD_covariance():
         #   dP_l/dq
         #
         #
-    
         b = self.b
         f = self.f
         s = self.s
@@ -569,7 +568,17 @@ class RSD_covariance():
         print 'covariance_PP {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
         return covariance_mutipole_PP
   
+    def RSDband_covariance_PP_All(self):
     
+        self.covariance_PP00 = np.array(self.RSDband_covariance_PP(0.0,0.0))
+        self.covariance_PP02 = np.array(self.RSDband_covariance_PP(0.0,2.0))
+        self.covariance_PP04 = np.array(self.RSDband_covariance_PP(0.0,4.0))
+        self.covariance_PP22 = np.array(self.RSDband_covariance_PP(2.0,2.0))
+        self.covariance_PP24 = np.array(self.RSDband_covariance_PP(2.0,4.0))
+        self.covariance_PP44 = np.array(self.RSDband_covariance_PP(4.0,4.0))
+  
+  
+  
     def RSDband_covariance_PXi( self, l1, l2 ):
 
 
@@ -666,6 +675,40 @@ class RSD_covariance():
         print 'covariance_PXi {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
         return covariance_multipole_PXi
 
+
+    def RSDband_covariance_PXi_All(self):
+    
+        import pp, sys, time
+    
+        ppservers = ()
+        #ppservers = ("140.254.91.255","",)
+    
+        if len(sys.argv) > 1:
+            ncpus = int(sys.argv[1])
+            # Creates jobserver with ncpus workers
+            job_server = pp.Server(ncpus, ppservers=ppservers)
+        else:
+            # Creates jobserver with automatically detected number of workers
+            job_server = pp.Server(ppservers=ppservers)
+        print "Starting pp with", job_server.get_ncpus(), "workers \n"
+    
+        inputs1 = ((0.0, 0.0,),(0.0, 2.0,),(0.0, 4.0,),(2.0, 0.0,),(2.0, 2.0,),(2.0, 4.0,),(4.0, 0.0,),(4.0, 2.0,),(4.0, 4.0,))
+        jobs1 = [ job_server.submit(self.RSDband_covariance_PXi, input, (Ll,avgBessel,)) for input in inputs1]
+        result1=[]
+        for job in jobs1:
+            re = job()
+            result1.append(re)
+        
+        self.covariance_PXi00 = result1[0]
+        self.covariance_PXi02 = result1[1]
+        self.covariance_PXi04 = result1[2]
+        self.covariance_PXi20 = result1[3]
+        self.covariance_PXi22 = result1[4]
+        self.covariance_PXi24 = result1[5]
+        self.covariance_PXi40 = result1[6]
+        self.covariance_PXi42 = result1[7]
+        self.covariance_PXi44 = result1[8]
+    
     
 
     def derivative_xi(self,l):
@@ -1402,9 +1445,6 @@ class RSD_covariance():
         rminmatrix2 = rmin[matrix5] # horizontal
         rmaxmatrix = rmax[matrix4] # vertical
         rmaxmatrix2 = rmax[matrix5] # horizontal
-        #klistmatrix = skcenter[matrix1] # axis 0 #redefine to match with r dimension
-        #dlnk = np.log(kcenter)
-        #dlnkmatrix = dlnk[matrix1]
     
     
         Vir1 = 4 * pi * rlistmatrix1**2 * dr1 * (1. + 1./12 * (dr1/rlistmatrix1)**2)
@@ -1428,7 +1468,7 @@ class RSD_covariance():
         Bessels = [B_queue.get() for pB in B_processes]
         Bessels.sort()
         Bessel_list = [ B[1] for B in Bessels]
-        print "bessel_process"
+        print 'bessel_process'
         
         avgBesselmatrix0 = np.array([ Bessel_list[0] for r in rcenter]).swapaxes(0,1)
         avgBesselmatrix2 = np.array([ Bessel_list[1] for r in rcenter]).swapaxes(0,1)
@@ -1436,66 +1476,63 @@ class RSD_covariance():
         
 
         print 'Add'
-        """
-        def FirstSecond(queue, order, (l1, l2, result, avgBessel1, avgBessel2)):
-        
-            Rint_result = result[matrix1] # convert 1d array to 3 d array for next calculation (same axis with kmatrix)
-            FirstTerm = simps(Rint_result * avgBessel1 * avgBessel2 ,skcenter, axis=0)/Vir1/Vir2
-            
-            
-            
-            
-            if l1 == l2:
-                
-                Last = (2./Vs) * (2*l1+1)/nn**2 / Vi #1d array
-                LastTerm = np.zeros((len(rcenter),len(rcenter)))
-                np.fill_diagonal(LastTerm,Last)
-            else : LastTerm = 0.
-            
-            re = FirstTerm+LastTerm
-            queue.put((order,re))
-        """
-        
         
         matrix1, matrix2 = np.mgrid[0:len(skcenter), 0:len(rcenter)]
+        Volume_double = Vir1 * Vir2
         def FirstSecond(queue, order, (l1, l2, result, avgBessel1, avgBessel2)):
         
             Rint_result = result[matrix1] # 2D
-            relist=[]
-            for i in range(len(rcenter)):
-                avgBessel1_split = avgBessel1[:, :, i] #2D
-                avgBessel2_split = avgBessel2[:, i, :]
-                re = simps(Rint_result * avgBessel1_split * avgBessel2_split, skcenter, axis=0)
-                relist.append(re)
+
+            relist = [ simps(Rint_result * avgBessel1[:, :, i] * avgBessel2[:, i, :], skcenter, axis=0) for i in range(len(rcenter)/2) ]
         
-            FirstTerm = relist/Vir1/Vir2 #2D
+            FirstTerm = relist/ Volume_double[0:len(rcenter)/2,:] #2D
             if l1 == l2:
                 Last = (2./Vs) * (2*l1+1)/nn**2 / Vi #1d array
-                LastTerm = np.zeros((len(rcenter),len(rcenter)))
-                np.fill_diagonal(LastTerm,Last)
+                LastTermmatrix = np.zeros((len(rcenter),len(rcenter)))
+                np.fill_diagonal(LastTermmatrix,Last)
+                LastTerm = LastTermmatrix[0:len(rcenter)/2,:]
             else : LastTerm = 0.
             
             re = FirstTerm+LastTerm
             queue.put((order,re))
         
+        
+        def FirstSecond2(queue, order, (l1, l2, result, avgBessel1, avgBessel2)):
+            
+            Rint_result = result[matrix1] # 2D
+            relist = [ simps(Rint_result * avgBessel1[:, :, i] * avgBessel2[:, i, :], skcenter, axis=0) for i in range(len(rcenter)/2, len(rcenter)) ]
+            
+            FirstTerm = relist/ Volume_double[len(rcenter)/2:len(rcenter),:] #2D
+            if l1 == l2:
+                Last = (2./Vs) * (2*l1+1)/nn**2 / Vi #1d array
+                LastTermmatrix = np.zeros((len(rcenter),len(rcenter)))
+                np.fill_diagonal(LastTermmatrix,Last)
+                LastTerm = LastTermmatrix[len(rcenter)/2:len(rcenter),:]
+            else : LastTerm = 0.
+            
+            re = FirstTerm+LastTerm
+            queue.put((order,re))
+            
+            
         F_inputs = (( 0.0, 0.0, Rintegral00, avgBesselmatrix0, avgBesselmatrix0),( 0.0, 2.0, Rintegral02,  avgBesselmatrix0, avgBesselmatrix2),(0.0, 4.0, Rintegral04, avgBesselmatrix0, avgBesselmatrix4 ),(2.0, 2.0, Rintegral22, avgBesselmatrix2, avgBesselmatrix2 ),(2.0, 4.0, Rintegral24, avgBesselmatrix2, avgBesselmatrix4 ),(4.0, 4.0, Rintegral44, avgBesselmatrix4, avgBesselmatrix4))
         
         F_queue = Queue()
-        F_processes = [Process(target=FirstSecond, args=(F_queue, z[0], z[1])) for z in zip(range(6),F_inputs)]
+        F_processes1 = [Process(target=FirstSecond, args=(F_queue, z[0], z[1])) for z in zip(range(6),F_inputs)]
+        F_processes2 = [Process(target=FirstSecond2, args=(F_queue, z[0], z[1])) for z in zip(range(6,12),F_inputs)]
+        F_processes = F_processes1 + F_processes2
         for pF in F_processes:
             pF.start()
-        #for pF in F_processes:
-            #pF.join()
+        
         Ts = [F_queue.get() for pF in F_processes]
         Ts.sort()
         Total = [T[1] for T in Ts]
 
-        self.covariance00 = Total[0]
-        self.covariance02 = Total[1]
-        self.covariance04 = Total[2]
-        self.covariance22 = Total[3]
-        self.covariance24 = Total[4]
-        self.covariance44 = Total[5]
+        self.covariance00 = np.vstack((Total[0], Total[6]))
+        self.covariance02 = np.vstack((Total[1], Total[7]))
+        self.covariance04 = np.vstack((Total[2], Total[8]))
+        self.covariance22 = np.vstack((Total[3], Total[9]))
+        self.covariance24 = np.vstack((Total[4], Total[10]))
+        self.covariance44 = np.vstack((Total[5], Total[11]))
     
     
         print 'RSD_shell_covariance_AllModes is finished'
