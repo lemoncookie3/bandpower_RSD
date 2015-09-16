@@ -221,15 +221,7 @@ class RSD_covariance():
             resultb = (2 * l + 1.)/2 * simps( 4 * pi * k**2 * Pm * Rintb, k )
             resultf = (2 * l + 1.)/2 * simps( 4 * pi * k**2 * Pm * Rintf, k )
             results = (2 * l + 1.)/2 * simps( 4 * pi * k**2 * Pm * Rints, k )
-            
-            """
-            Rintb = (2 * l + 1.)/2 * simps( 4 * pi * kmatrix**2 * Rb * Pmmatrix, mumatrix, axis=0 )
-            Rintf = (2 * l + 1.)/2 * simps( 4 * pi * kmatrix**2 * Rf * Pmmatrix, mumatrix, axis=0 )
-            Rints = (2 * l + 1.)/2 * simps( 4 * pi * kmatrix**2 * Rs * Pmmatrix, mumatrix, axis=0 )
-            resultb = simps( muintb, k )
-            resultf = simps( muintf, k )
-            results = simps( muints, k )
-            """
+
             resultlistb.append(resultb)
             resultlistf.append(resultf)
             resultlists.append(results)
@@ -424,14 +416,10 @@ class RSD_covariance():
             k = skbin[i*self.subN : i*self.subN+self.subN]
             kmatrix = k[matrix2]
             Dmatrix = np.exp( - kmatrix**2 * mumatrix**2 * self.s**2) #FOG matrix
-            
-            #R = (b + f*mumatrix**2)**2 * Dmatrix
-            
-            Rintegral = 1. #(2*l + 1.)/2 * simps( R * Le_matrix, mumatrix, axis = 0 )
             kmatrix2 = k[matrix4]
             AvgBesselmatrix = avgBessel(l, kmatrix2 ,rminmatrix,rmaxmatrix)/Vir
             
-            result = np.real(I**l) * simps( kmatrix2**2 * Rintegral * AvgBesselmatrix /(2*pi**2) , kmatrix2, axis = 1 )
+            result = np.real(I**l) * simps( kmatrix2**2 * AvgBesselmatrix /(2*pi**2) , k, axis = 1 )
             resultlist.append(result)
         
         derivative_Xi_bandpower = np.array(resultlist).reshape((len(kcenter),len(rcenter)))
@@ -712,15 +700,9 @@ class RSD_covariance():
     
 
     def derivative_xi(self,l):
-        #========================================================
-        #
-        #   Function for calculating multipole derivatives
-        #
-        #
-        #   Output : dXi/db, dXi/df, dXi/ds three 1d array along r axis
-        #            for each mode l ( l = 0,2,4 )
-        #
-        #========================================================
+        """ Output : dXi/db, dXi/df, dXi/ds three 1d array\
+            along r axis for each mode l ( l = 0,2,4 )"""
+    
         import cmath
         I = cmath.sqrt(-1)
         
@@ -743,33 +725,42 @@ class RSD_covariance():
         
         Const = (2*l + 1.)/2 * np.real(I**l) / (2 * pi**2)
         
-        matrix1, matrix2, matrix3 = np.mgrid[0:len(mulist), 0:len(skcenter), 0:len(rcenter) ]
+        matrix1, matrix2 = np.mgrid[ 0:len(mulist), 0:len(skcenter) ]
         matrix4, matrix5 = np.mgrid[ 0:len(skcenter), 0: len(rcenter)]
         kmatrix = skcenter[matrix2]
         mumatrix = self.mulist[matrix1]
+        
         rminmatrix = rmin[matrix5]
         rmaxmatrix = rmax[matrix5]
         rmatrix = rcenter[matrix5]
         drmatrix = dr[matrix5]
         Le_matrix = Ll(l, mumatrix)
         
-        Dmatrix = np.exp(- kmatrix**2 * mumatrix**2 * self.s**2) #FOG matrix
+        
+        Dmatrix = np.exp(- kmatrix**2 * mumatrix**2 * self.s**2) #2D
         Rb = 2 *(self.b + self.f * mumatrix**2) * Dmatrix
         Rf = 2 * mumatrix**2 *(self.b + self.f * mumatrix**2) * Dmatrix
         Rs = (- kmatrix**2 * mumatrix**2)*(self.b + self.f * mumatrix**2)**2 * Dmatrix
         
-        muintb = simps( Rb * Le_matrix, mumatrix, axis=0 ) #2D
+        muintb = simps( Rb * Le_matrix, mumatrix, axis=0 ) #1D
         muintf = simps( Rf * Le_matrix, mumatrix, axis=0 )
         muints = simps( Rs * Le_matrix, mumatrix, axis=0 )
         
+        muintbmatrix = muintb[matrix4] # 1D -> 2D along k axis
+        muintfmatrix = muintf[matrix4]
+        muintsmatrix = muints[matrix4]
         kmatrix2 = skcenter[matrix4]
         Pmmatrix = matterpower[matrix4]
+        
         Vir = 4 * pi * rmatrix**2 * drmatrix + 1./3 * pi * (drmatrix)**3
-        AvgBesselmatrix = avgBessel(l,kmatrix2,rminmatrix,rmaxmatrix)/Vir #2D
+        
+        #AvgBesselmatrix = avgBessel(l,kmatrix2,rminmatrix,rmaxmatrix)/Vir #2D
+        
+        AvgBesselmatrix = np.array([ avgBessel(l,sk,rmin,rmax) for sk in skcenter ])/Vir
 
-        resultb = Const * simps( kmatrix2**2 * Pmmatrix * muintb * AvgBesselmatrix, skcenter, axis = 0 )
-        resultf = Const * simps( kmatrix2**2 * Pmmatrix * muintf * AvgBesselmatrix, skcenter, axis = 0 )
-        results = Const * simps( kmatrix2**2 * Pmmatrix * muints * AvgBesselmatrix, skcenter, axis = 0 )
+        resultb = Const * simps( kmatrix2**2 * Pmmatrix * muintbmatrix * AvgBesselmatrix, skcenter, axis = 0 )
+        resultf = Const * simps( kmatrix2**2 * Pmmatrix * muintfmatrix * AvgBesselmatrix, skcenter, axis = 0 )
+        results = Const * simps( kmatrix2**2 * Pmmatrix * muintsmatrix * AvgBesselmatrix, skcenter, axis = 0 )
     
         return resultb, resultf, results
             
@@ -802,7 +793,7 @@ class RSD_covariance():
         self.dxib2, self.dxif2, self.dxis2 = self.derivative_xi(2.0)
         self.dxib4, self.dxif4, self.dxis4 = self.derivative_xi(4.0)
         """
-        print "derivative_Xi_All (dxib, dxif, dxif)"
+        print 'derivative_Xi_All (dxib, dxif, dxif)'
 
 
     
@@ -1435,7 +1426,7 @@ class RSD_covariance():
         #print "Rintegral end"
         # constructing 3 dimension matrix
     
-        matrix1,matrix2,matrix3 = np.mgrid[0:len(skcenter),0:len(rcenter),0:len(rcenter)]
+        #matrix1,matrix2,matrix3 = np.mgrid[0:len(skcenter),0:len(rcenter),0:len(rcenter)]
         matrix4,matrix5 = np.mgrid[0:len(rcenter),0:len(rcenter)]
         rlistmatrix1 = rcenter[matrix4] # vertical
         rlistmatrix2 = rcenter[matrix5] # horizontal
