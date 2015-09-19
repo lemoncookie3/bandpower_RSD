@@ -49,13 +49,13 @@ class RSD_covariance():
         
         
         
-        self.skbin = np.logspace(np.log10(self.KMIN),np.log10(self.KMAX), subN * self.n + 1, base=10) #For Reid, delete '+1'
+        self.skbin = np.logspace(np.log10(self.KMIN),np.log10(self.KMAX), subN * self.n + 1, base=10) #For Reid, delete '+1', not relevant anymore
         self.skcenter = np.array([(self.skbin[i] + self.skbin[i+1])/2. for i in range(len(self.skbin)-1)])
         self.skmin = np.delete(self.skbin,-1)
         self.skmax = np.delete(self.skbin,0)
         self.sdlnk = np.log(self.skmax/self.skmin)
         
-        self.klist = np.array([self.skbin[i*subN] for i in range(len(self.skbin)/subN + 1)]) #For Reid, delete '+1'
+        self.klist = np.array([self.skbin[i*subN] for i in range(len(self.skbin)/subN + 1)]) #For Reid, delete '+1', not relevant anymore
 
 
         self.kcenter = np.array([(self.klist[i] + self.klist[i+1])/2. for i in range(len(self.klist)-1)])
@@ -179,10 +179,9 @@ class RSD_covariance():
     
 
     def RSDband_derivative_P(self,l):
-        #
-        #   dP_l/dq
-        #
-        #
+        
+        """ dP_l/dq """
+  
         b = self.b
         f = self.f
         s = self.s
@@ -236,6 +235,39 @@ class RSD_covariance():
         self.dPb4, self.dPf4, self.dPs4 = self.RSDband_derivative_P(4.0)
         print "RSDband_derivative_P_All (dP/db, dP/df, dP/ds)"
 
+
+
+    def derivative_P_analytic(self, l):
+    
+        from scipy.integrate import quad
+        self.kcenter
+        self.skcenter
+        Pm = self.RealPowerBand
+        
+        b = self.b
+        f = self.f
+        s = self.s
+        
+        D = lambda k,mu : np.exp(- k*k*mu*mu*s*s)
+        R = lambda k, mu :  0.5 * 2 * (b + f * mu**2) * D(k,mu)
+    
+        const = (2*l + 1)/2.
+        multipole = []
+        for i in range(len(self.skcenter)):
+            k = self.skcenter
+            re, err = quad( lambda mu : R(k[i], mu) * D( k[i], mu ), -1, 1 )
+            result = Pm[i] * re
+            multipole.append(result)
+        
+        DAT = np.column_stack(( self.skcenter, multipole))
+        np.savetxt('plots/compare/dPd0_analytic.txt', DAT, delimiter=" ", fmt="%s")
+        return multipole
+    
+    
+    
+    
+    
+    
     def _(self):
     #
     #   dP_l/dq
@@ -1047,27 +1079,7 @@ class RSD_covariance():
 
 
     def covariance(self, l1, l2):
-        #================================================================
-        #
-        #   < Function for calculating components of covariance matrix >
-        #
-        #   From klist, rlist, Pmlist, construct 2 or 3 dimensional array
-        #   passing through whole power spectrum function and integrate
-        #   along k axis.
-        #   This function calls function 'sbess' from sbess fortran module and
-        #   fuction 'eval_legendre' legen fortran module/
-        #   For compiling, read 'readme.txt'
-        #
-        #   version2. modified Feb 13, 2015 by Sujeong Lee
-        #
-        #
-        #   Output : submatrices C_ll' for each modes (l,l' = 0,2,4)
-        #            size of each matrix is (# of r bins) x (# of r bins)
-        #
-        #   C_ll' = <X_l(ri)X_l'(rj)>
-        #
-        #
-        #=================================================================
+
         
         #from scipy.special import eval_legendre
         from scipy.integrate import quad,simps
@@ -1173,34 +1185,6 @@ class RSD_covariance():
         print 'covariance {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
         return Result
 
-
-
-
-    def covariance_All(self):
-    
-        from multiprocessing import Process, Queue
-        
-        def covariance_process(q, order, (l1, l2)):
-            re = self.covariance_original(l1, l2)
-            q.put((order, re))
-    
-        inputs =[(0.0, 0.0),(0.0, 2.0), (0.0, 4.0), (2.0, 2.0), (2.0, 4.0),(4.0, 4.0)]
-        q = Queue()
-        
-        Ps = [Process(target=covariance_process, args=(q, z[0], z[1])) for z in zip(range(6), inputs)]
-        for p in Ps:
-            p.start()
-        Cov = [q.get() for p in Ps]
-        Cov.sort()
-        Covlist = [Co[1] for Co in Cov]
-        
-    
-        self.covariance00 = Covlist[0]
-        self.covariance02 = Covlist[1]
-        self.covariance04 = Covlist[2]
-        self.covariance22 = Covlist[3]
-        self.covariance24 = Covlist[4]
-        self.covariance44 = Covlist[5]
         
 
 
@@ -1493,6 +1477,45 @@ class RSD_covariance():
             re = FirstTerm+LastTerm
             queue.put((order,re))
 
+        """
+        
+        matrix1, matrix2 = np.mgrid[0:len(skcenter), 0:len(rcenter)]
+        Volume_double = Vir1 * Vir2
+        def FirstSecond(queue, order, (l1, l2, result, avgBessel1, avgBessel2)):
+        
+            Rint_result = result[matrix1] # 2D
+
+            relist = [ simps(Rint_result * avgBessel1[:, :, i] * avgBessel2[:, i, :], skcenter, axis=0) for i in range(len(rcenter)/2) ]
+        
+            FirstTerm = relist/ Volume_double[0:len(rcenter)/2,:] #2D
+            if l1 == l2:
+                Last = (2./Vs) * (2*l1+1)/nn**2 / Vi #1d array
+                LastTermmatrix = np.zeros((len(rcenter),len(rcenter)))
+                np.fill_diagonal(LastTermmatrix,Last)
+                LastTerm = LastTermmatrix[0:len(rcenter)/2,:]
+            else : LastTerm = 0.
+            
+            re = FirstTerm+LastTerm
+            queue.put((order,re))
+        
+        
+        def FirstSecond2(queue, order, (l1, l2, result, avgBessel1, avgBessel2)):
+            
+            Rint_result = result[matrix1] # 2D
+            relist = [ simps(Rint_result * avgBessel1[:, :, i] * avgBessel2[:, i, :], skcenter, axis=0) for i in range(len(rcenter)/2, len(rcenter)) ]
+            
+            FirstTerm = relist/ Volume_double[len(rcenter)/2:len(rcenter),:] #2D
+            if l1 == l2:
+                Last = (2./Vs) * (2*l1+1)/nn**2 / Vi #1d array
+                LastTermmatrix = np.zeros((len(rcenter),len(rcenter)))
+                np.fill_diagonal(LastTermmatrix,Last)
+                LastTerm = LastTermmatrix[len(rcenter)/2:len(rcenter),:]
+            else : LastTerm = 0.
+            
+            re = FirstTerm+LastTerm
+            queue.put((order,re))
+            
+        """
         
         F_inputs = (( 0.0, 0.0, Rintegral00, avgBesselmatrix0, avgBesselmatrix0),( 0.0, 2.0, Rintegral02,  avgBesselmatrix0, avgBesselmatrix2),(0.0, 4.0, Rintegral04, avgBesselmatrix0, avgBesselmatrix4 ),(2.0, 2.0, Rintegral22, avgBesselmatrix2, avgBesselmatrix2 ),(2.0, 4.0, Rintegral24, avgBesselmatrix2, avgBesselmatrix4 ),(4.0, 4.0, Rintegral44, avgBesselmatrix4, avgBesselmatrix4))
         
@@ -1631,6 +1654,10 @@ class RSD_covariance():
 
 
 def Ll(l,x):
+    
+    """ Legendre Polynomial
+        call fortran module in legen.f90 """
+    
     import numpy as np
     from numpy import vectorize
     from legen import eval_legendre
@@ -1641,17 +1668,12 @@ def Ll(l,x):
     
     return result
 
-"""
-Ll = lambda l,x : eval_legendre(l,x) #Legendre
-Ll = np.vectorize(Ll)
-"""
-
 def avgBessel(l,k,rmin,rmax):
-    #
-    #
-    #
+    
+    """ Averaged spherical Bessel function in configuration space
+        call fortran module in sici.f90 (sine integral ftn) """
+    
     from numpy import vectorize, pi, cos, sin
-    #from scipy.special import sici
     from sici import sici
     sici = vectorize(sici)
     
@@ -1692,10 +1714,10 @@ def CombineMatrix3by2(cov00, cov01, cov10, cov11, cov20, cov21):
     return C_Matrix
 
 def CombineCovariance3(l, matrices):
-        #
-        #   Input should be matrix
-        #   matrices = [00, 02, 04, 22, 24, 44]
-        #
+
+    """ Input should be a list of matrices :
+        matrices = [00, 02, 04, 22, 24, 44] """
+
     cov00 = matrices[0][0:l+1,0:l+1]
     cov02 = matrices[1][0:l+1,0:l+1]
     cov04 = matrices[2][0:l+1,0:l+1]
@@ -1710,19 +1732,15 @@ def CombineCovariance3(l, matrices):
     C_Matrix2 = np.concatenate((cov20, cov22, cov24), axis=1)
     C_Matrix3 = np.concatenate((cov40, cov42, cov44), axis=1)
     C_Matrix = np.vstack((C_Matrix1, C_Matrix2, C_Matrix3))
-    
-    
-    #C_Matrix = CombineMatrix3by3(cov00, cov02, cov04, np.transpose(cov02), cov22, cov24, np.transpose(cov04), np.transpose(cov24), cov44)
-    #C_Matrix = C_Matrix.swapaxes(1,2).reshape(3*(l+1),3*(l+1))
-        #C_Matrix_inverse = inv(C_Matrix.reshape(3*(l+1),3*(l+1)))
-        #C_Matrix_inverse = np.matrix(C_Matrix_inverse)
+
     return C_Matrix
 
+
 def CombineCrossCovariance3(l1, l2, matrices):
-    #
-    #   Input should be matrix
-    #   matrices = [00, 02, 04, 22, 24, 44]
-    #
+
+    """ Input should be a list of matrices :
+        matrices = [00, 02, 04, 22, 24, 44] """
+        
     cov00 = matrices[0][0:l1+1,0:l2+1]
     cov02 = matrices[1][0:l1+1,0:l2+1]
     cov04 = matrices[2][0:l1+1,0:l2+1]
@@ -1742,10 +1760,10 @@ def CombineCrossCovariance3(l1, l2, matrices):
 
 
 def CombineCovariance2(l, matrices):
-        #
-        #   Input should be matrix
-        #   matrices = [00, 02, 04, 22, 24, 44]
-        #
+    
+    """ Input should be a list of matrices :
+        matrices = [00, 02, 04, 22, 24, 44] """
+    
     cov00 = matrices[0][0:l+1,0:l+1]
     cov02 = matrices[1][0:l+1,0:l+1]
     cov20 = matrices[3][0:l+1,0:l+1]
@@ -1759,10 +1777,9 @@ def CombineCovariance2(l, matrices):
 
 
 def CombineCrossCovariance2(l1, l2, matrices):
-    #
-    #   Input should be matrix
-    #   matrices = [00, 02, 04, 22, 24, 44]
-    #
+    """ Input should be a list of matrices :
+        matrices = [00, 02, 04, 22, 24, 44] """
+    
     cov00 = matrices[0][0:l1+1,0:l2+1]
     cov02 = matrices[1][0:l1+1,0:l2+1]
     cov20 = matrices[3][0:l1+1,0:l2+1]
@@ -1802,7 +1819,7 @@ def CombineDevXi(l, matrices):
 def CombineDevXi3(l, matrices):
     #
     #   Input should be matrix
-    #   matrices = [00, 02, 04, 22, 24, 44]
+    #   matrices = [ 8 matrices ]
     #
     cov00 = matrices[0][:,0:l+1]
     cov02 = matrices[1][:,0:l+1]
@@ -1821,16 +1838,15 @@ def CombineDevXi3(l, matrices):
     
     C_Matrix1 = np.concatenate((cov00, cov02), axis=1)
     C_Matrix2 = np.concatenate((cov20, cov22), axis=1)
-    C_Matrix3 = np.concatenate((cov40, cov42), axis=1)
-    Xi2 = np.vstack((C_Matrix1, C_Matrix2, C_Matrix3))
+    Xi2 = np.vstack((C_Matrix1, C_Matrix2))
     
     return Xi, Xi2
 
 
 def FisherProjection( deriv, CovMatrix ):
-    #
-    #   Projection for Fisher Matrix
-    #
+    
+    """ Projection for Fisher Matrix """
+    
     FisherMatrix = np.dot(np.dot(deriv, inv(CovMatrix)), np.transpose(deriv))
     for i in range(len(deriv)):
         for j in range(i, len(deriv)):
@@ -1838,26 +1854,37 @@ def FisherProjection( deriv, CovMatrix ):
     
     return FisherMatrix
 
+def FisherProjection_Fishergiven( deriv, Fisher ):
+    
+    """ Projection for Fisher Matrix """
+    
+    FisherMatrix = np.dot(np.dot(deriv, Fisher), np.transpose(deriv))
+    for i in range(len(deriv)):
+        for j in range(i, len(deriv)):
+            FisherMatrix[j,i] = FisherMatrix[i,j]
+    
+    return FisherMatrix
+
 def FractionalError( param1, param2, CovarianceMatrix  ):
-        #
-        #   fractional error on Parameter  \sigma P / P
-        #
+    
+    """ fractional error on Parameter  \sigma P / P """
+        
     error = np.sqrt(CovarianceMatrix.diagonal())
     return error[0]/param1, error[1]/param2
 
 
 def FractionalErrorBand( params, CovarianceMatrix  ):
-    #
-    #   fractional error on Parameter  \sigma P / P
-    #
+    
+    """ fractional error on Parameter  \sigma P / P """
+    
     error = np.sqrt(CovarianceMatrix.diagonal())
     return error/params
 
 
 def CrossCoeff( Matrix ):
-    #
-    #   Func for getting Cross Corelation matrix   C_ij / Sqrt( C_ii * C_jj)
-    #
+    
+    """ Cross Corelation matrix   C_ij / Sqrt( C_ii * C_jj)"""
+    
     matrix1,matrix2 = np.mgrid[0:len(Matrix[0]),0:len(Matrix[0])]
     diagonal = Matrix.diagonal()
     Coeff = Matrix /np.sqrt(diagonal[matrix1] * diagonal[matrix2])

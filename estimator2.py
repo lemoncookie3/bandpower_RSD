@@ -40,9 +40,9 @@ RMAX = 180. #200.  #628.32 # for Reid  #1.15 * np.pi / self.kmin
 # REID (0.01~ 180) corresponding k value :(0.02 ~ 361.28)
 # REID convergence condition : kN = 61, rN = 151, subN = 101
 # REID convergence condition : kN = 101, rN = 101, subN = 121
-kN = 101  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
-rN = 201  #101 for Reid # number of r bins
-subN = 51 #101 for Reid
+kN = 61  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
+rN = 601  #101 for Reid # number of r bins
+subN = 101 #101 for Reid
 
 RSDPower = RSD_covariance(KMIN, KMAX, RMIN, RMAX, kN, rN, subN)
 file = open('matterpower_z_0.55.dat')
@@ -117,7 +117,7 @@ def main():
     
     #-------------------------------------------------------
     # step 2 k loop
-    
+    """
     step2_process = 2
     print "multi_processing for k loop : ", step2_process, " workers"
     
@@ -159,10 +159,10 @@ def main():
 
     Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_b_determin, error_b_marginal, error_b_determin2, error_b_marginal2, pdfname = output_b_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0005, ymax=5*10**(-2), scale='semilogy' )
     Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_f_determin, error_f_marginal, error_f_determin2, error_f_marginal2, pdfname = output_f_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0, ymax=0.07 )
-
+    """
     #-------------------------------------------------------
     # step 1 r loop
-    """
+
     step1_process = 12
     print "multi_processing for r loop : ", step1_process, " workers"
     
@@ -206,7 +206,7 @@ def main():
     Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_b_determin, error_b_marginal, error_b_determin2, error_b_marginal2, pdfname = output_b_pdf2, title = plot_title2, xmin=0.0, xmax=60.0, ymin=0.0005, ymax=5*10**(-2), scale='semilogy' )
     Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_f_determin, error_f_marginal, error_f_determin2, error_f_marginal2, pdfname = output_f_pdf2, title = plot_title2, xmin=0.0, xmax=60.0, ymin=0.0, ymax=0.07 )
 
-    """
+
 
 def error():
     
