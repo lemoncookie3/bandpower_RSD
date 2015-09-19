@@ -23,26 +23,27 @@ from numpy import vectorize
 from scipy.interpolate import interp1d
 from covariance_class2 import *
 
-import pp, sys, time
+import pp, sys, time, datetime
 from multiprocessing import Process, Queue
 
 #   Initialization
 
-print '\n estimator 2'
+print '\nestimator 2'
+print datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d %H:%M:%S')
 
 KMIN = 0.0001
 KMAX = 502.32
     
 # r scale
-RMIN = 0.1 # 6. #29. # 24. #0.1 for Reid   #1.15 * np.pi / self.kmax
+RMIN = 0.1# 6. #29. # 24. #0.1 for Reid   #1.15 * np.pi / self.kmax
 RMAX = 180. #200.  #628.32 # for Reid  #1.15 * np.pi / self.kmin
     
 # REID (0.01~ 180) corresponding k value :(0.02 ~ 361.28)
 # REID convergence condition : kN = 61, rN = 151, subN = 101
 # REID convergence condition : kN = 101, rN = 101, subN = 121
-kN = 61  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
-rN = 601  #101 for Reid # number of r bins
-subN = 101 #101 for Reid
+kN = 1001  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
+rN = 201  #101 for Reid # number of r bins
+subN = 201 #101 for Reid
 
 RSDPower = RSD_covariance(KMIN, KMAX, RMIN, RMAX, kN, rN, subN)
 file = open('matterpower_z_0.55.dat')
@@ -60,8 +61,7 @@ kcut_max = len(RSDPower.kmax)-1 #24  #90
 # 18, 29(61) for BAO+RSD (k: 0.01 ~ 0.2))
 # 12, 24(41) for big scale and small scale
 # 21, __(61) for Reid range # REID (0.01~ 180) corresponding k value :(0.02 ~ 361.28)
-    
-    
+
 print "kcut_min :", RSDPower.kmin[kcut_min], "  kcut_max :", RSDPower.kmax[kcut_max]
 print "rcut_min :", RSDPower.rmin[rcut_max], "  rcut_max :", RSDPower.rmax[rcut_min]
 
@@ -71,26 +71,44 @@ def main():
 
     #multipole band ================================================================
     # shall averaged in each k bin
-    
+    """
     multipole_bandpower0 = RSDPower.multipole_P(0.0)
     multipole_bandpower2 = RSDPower.multipole_P(2.0)
     multipole_bandpower4 = RSDPower.multipole_P(4.0)
     multipole_bandpower = np.concatenate((multipole_bandpower0,multipole_bandpower2,multipole_bandpower4), axis=0)
-
+    """
     # multipole derivatives ========================================================
-    
     
     ## devP
     RSDPower.RSDband_derivative_P_All()
     # dPb0, dPf0, dPs0, dPb2, dPf2, dPs2, dPb4, dPf4, dPs4 = RSDPower.RSDband_derivative_P_All()
-
+    
+    """
+    DAT = np.column_stack(( RSDPower.kcenter, RSDPower.dPb0))
+    filename1 = 'plots/compare/dPb0_sk{:>1.3f}_k{:>1.3f}.txt'.format(RSDPower.sdlnk[2], RSDPower.dlnk)
+    np.savetxt(filename1, DAT, delimiter=" ", fmt="%s")
+    print "txt saved : ", filename1
+    stop
+    """
+    """
+    file1 = 'plots/compare/dPb0_sk0.000_k0.038.txt' # kN401, subN251
+    file2 = 'plots/compare/dPb0_sk0.000_k0.019.txt' # kN801, subN125
+    
+    Plot_dPb(file2)
+    stop
+    """
+    #Plot_derivatives()
+    #stop
+    
     RSDPower.derivative_Xi_band_All()
     #dxip0, dxip2, dxip4 = RSDPower.derivative_Xi_band_All()
-
+    
     RSDPower.derivative_Xi_All()
     #RSDPower.RSDband_derivative_xi_All()
 
     Compare_Derivatives()
+    
+    # test ======================================================================
     
     
     #covariance matrix============================================================
@@ -109,37 +127,45 @@ def main():
     
     matricesXi = [RSDPower.covariance00, RSDPower.covariance02, RSDPower.covariance04, np.transpose(RSDPower.covariance02), RSDPower.covariance22, RSDPower.covariance24,np.transpose(RSDPower.covariance04), np.transpose(RSDPower.covariance24), RSDPower.covariance44]
     print np.sum(matricesXi)
-    
-
 
     #error_Total( kcut_min ,kcut_max )
     #stop
     
+    #Reid_step2( len(RSDPower.kcenter)-1)
+    #stop
+    
     #-------------------------------------------------------
-    # step 2 k loop
-    """
-    step2_process = 2
-    print "multi_processing for k loop : ", step2_process, " workers"
+    # step 2 r-cut loop
+    step2_process = 12
+    step1_process = 12
+    print 'multi_processing for r loop : ', step1_process, ' workers'
+    print 'multi_processing for k loop : ', step2_process, ' workers'
     
-    numberlist_k = np.arange(1,len(RSDPower.kcenter)-1)
+    
+    numberlist_k = np.arange(1,len(RSDPower.kcenter)-1,3)
     numberlist_k_split = np.array_split(numberlist_k, step2_process)
-    
+  
+    numberlist_r = np.arange(1,len(RSDPower.rcenter)-1,2)
+    numberlist_r_split = np.array_split(numberlist_r, step1_process)
+
+
     def Reid_step2_loop(q, order, input):
         rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2 = Reid_step2(input)
         DAT = np.array(np.concatenate((rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2), axis = 0)).reshape(9,len(input))
         q.put(( order, DAT ))
+
     
     loop_queue = Queue()
-    loop_processes = [Process(target=Reid_step2_loop, args=(loop_queue, z[0], z[1])) for z in zip(range(step2_process+1), numberlist_k_split)]
+    loop_processes = [Process(target=Reid_step2_loop, args=(loop_queue, z[0], z[1])) for z in zip(range(step1_process+1), numberlist_r_split)]
     for p in loop_processes:
         p.start()
-    for p in loop_processes:
-        p.join()
+        #for p in loop_processes:
+        #p.join()
     loop_result = [loop_queue.get() for p in loop_processes]
     loop_result.sort()
     loop_result_list = [ loop[1] for loop in loop_result ]
     loops = loop_result_list[0]
-    for i in range(1, step2_process):
+    for i in range(1, step1_process):
         loops = np.concatenate((loops, loop_result_list[i]), axis =1 )
     
     rr = loops[0]
@@ -153,22 +179,57 @@ def main():
     error_f_marginal2 = loops[8]
 
 
-    output_b_pdf = 'plots/Reid/TwoFractionalError_b_dlnr{:>1.2f}_dlnk{:>1.2f}.pdf'.format(RSDPower.dlnr, RSDPower.dlnk)
-    output_f_pdf = 'plots/Reid/TwoFractionalError_f_dlnr{:>1.2f}_dlnk{:>1.2f}.pdf'.format(RSDPower.dlnr, RSDPower.dlnk)
+    print 'plotting'
+    output_b_pdf = 'plots/Reid/RTwoFractionalError_b_dlnr{:>1.2f}_dlnk{:>1.2f}.pdf'.format(RSDPower.dlnr, RSDPower.dlnk)
+    output_f_pdf = 'plots/Reid/RTwoFractionalError_f_dlnr{:>1.2f}_dlnk{:>1.2f}.pdf'.format(RSDPower.dlnr, RSDPower.dlnk)
     plot_title = 'RSDFractional Error on b and f (Two Step)\n z=0.55, dlnr = {:>1.3f}, dlnk = {:>1.3f}, kN = {}, rN = {}'.format(RSDPower.dlnr, RSDPower.dlnk, RSDPower.n, RSDPower.n2)
 
-    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_b_determin, error_b_marginal, error_b_determin2, error_b_marginal2, pdfname = output_b_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0005, ymax=5*10**(-2), scale='semilogy' )
-    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_f_determin, error_f_marginal, error_f_determin2, error_f_marginal2, pdfname = output_f_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0, ymax=0.07 )
-    """
+    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_b_determin, error_b_marginal, error_b_determin2, error_b_marginal2, pdfname = output_b_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0005, ymax=5*10**(-2), scale='semilogy', basename='r_min'  )
+    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_f_determin, error_f_marginal, error_f_determin2, error_f_marginal2, pdfname = output_f_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0, ymax=0.07, basename='r_min'  )#xmax=180.0, ymin=0.0, ymax=0.30, basename='r_min'  )
+
+
+    #-------------------------------------------------------
+    # step 2 k-cut loop
+
+    def Reid_step2_loop(q, order, input):
+        rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2 = Reid_step2_kcut(input)
+        DAT = np.array(np.concatenate((rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2), axis = 0)).reshape(9,len(input))
+        q.put(( order, DAT ))
+
+    loop_queue = Queue()
+    loop_processes = [Process(target=Reid_step2_loop, args=(loop_queue, z[0], z[1])) for z in zip(range(step2_process+1), numberlist_k_split)]
+    for p in loop_processes:
+        p.start()
+
+    loop_result = [loop_queue.get() for p in loop_processes]
+    loop_result.sort()
+    loop_result_list = [ loop[1] for loop in loop_result ]
+    loops = loop_result_list[0]
+    for i in range(1, step2_process):
+        loops = np.concatenate((loops, loop_result_list[i]), axis =1 )
+
+    rr = loops[0]
+    error_b_determin = loops[1]
+    error_f_determin = loops[2]
+    error_b_marginal = loops[3]
+    error_f_marginal = loops[4]
+    error_b_determin2 = loops[5]
+    error_f_determin2 = loops[6]
+    error_b_marginal2 = loops[7]
+    error_f_marginal2 = loops[8]
+
+
+    output_b_pdf = 'plots/Reid/KTwoFractionalError_b_dlnr{:>1.2f}_dlnk{:>1.2f}.pdf'.format(RSDPower.dlnr, RSDPower.dlnk)
+    output_f_pdf = 'plots/Reid/KTwoFractionalError_f_dlnr{:>1.2f}_dlnk{:>1.2f}.pdf'.format(RSDPower.dlnr, RSDPower.dlnk)
+    plot_title = 'RSDFractional Error on b and f (Two Step, kcut)\n z=0.55, dlnr = {:>1.3f}, dlnk = {:>1.3f}, kN = {}, rN = {}'.format(RSDPower.dlnr, RSDPower.dlnk, RSDPower.n, RSDPower.n2)
+
+    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_b_determin, error_b_marginal, error_b_determin2, error_b_marginal2, pdfname = output_b_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0005, ymax=5*10**(-2), scale='semilogy', basename='r_min' )
+    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_f_determin, error_f_marginal, error_f_determin2, error_f_marginal2, pdfname = output_f_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0, ymax=0.07, basename='r_min'  )
+    
+
     #-------------------------------------------------------
     # step 1 r loop
 
-    step1_process = 12
-    print "multi_processing for r loop : ", step1_process, " workers"
-    
-    numberlist_r = np.arange(1,len(RSDPower.rcenter)-1)
-    numberlist_r_split = np.array_split(numberlist_r, step1_process)
-    
 
     def Reid_step1_loop(q, order, input):
         rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2 = Reid_step1(input)
@@ -179,8 +240,8 @@ def main():
     loop_processes = [Process(target=Reid_step1_loop, args=(loop_queue, z[0], z[1])) for z in zip(range(step1_process), numberlist_r_split)]
     for p in loop_processes:
         p.start()
-    for p in loop_processes:
-        p.join()
+        #for p in loop_processes:
+        #p.join()
     loop_result = [loop_queue.get() for p in loop_processes]
     loop_result.sort()
     loop_result_list = [ loop[1] for loop in loop_result ]
@@ -203,8 +264,8 @@ def main():
     output_f_pdf2 = 'plots/Reid/OneFractionalError_f_dlnr{:>1.2f}_dlnk{:>1.2f}.pdf'.format(RSDPower.dlnr, RSDPower.dlnk)
     plot_title2 = 'RSDFractional Error on b and f (One Step)\n z=0.55, dlnr = {:>1.3f}, dlnk = {:>1.3f}, kN = {}, rN = {}'.format(RSDPower.dlnr, RSDPower.dlnk, RSDPower.n, RSDPower.n2)
     
-    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_b_determin, error_b_marginal, error_b_determin2, error_b_marginal2, pdfname = output_b_pdf2, title = plot_title2, xmin=0.0, xmax=60.0, ymin=0.0005, ymax=5*10**(-2), scale='semilogy' )
-    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_f_determin, error_f_marginal, error_f_determin2, error_f_marginal2, pdfname = output_f_pdf2, title = plot_title2, xmin=0.0, xmax=60.0, ymin=0.0, ymax=0.07 )
+    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_b_determin, error_b_marginal, error_b_determin2, error_b_marginal2, pdfname = output_b_pdf2, title = plot_title2, xmin=0.0, xmax=60.0, ymin=0.0005, ymax=5*10**(-2), scale='semilogy',basename='r_min'  )
+    Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_f_determin, error_f_marginal, error_f_determin2, error_f_marginal2, pdfname = output_f_pdf2, title = plot_title2, xmin=0.0, xmax=60.0, ymin=0.0, ymax=0.07, basename='r_min'  )
 
 
 
@@ -459,9 +520,9 @@ def error_only_CP(l):
     Xi, Xi2 = CombineDevXi(l, matrices2P)
 
     Fisher_marginal = FisherProjection(Xi, C_matrix3)
-    Fisher_determin = Fisher_marginal[0:2,0:2] #FisherProjection(Xi2, C_matrix2)
+    Fisher_determin = Fisher_marginal[0:2,0:2]
     Fisher_marginal2 = FisherProjection(Xi2, C_matrix2)
-    Fisher_determin2 = Fisher_marginal2[0:2,0:2] #FisherProjection(Xi2, C_matrix2)
+    Fisher_determin2 = Fisher_marginal2[0:2,0:2]
     
     """
     Cross = CrossCoeff( C_matrix3 )
@@ -632,24 +693,24 @@ def error_Total( kcut_min ,kcut_max ):
     
     print "kcut_min :", RSDPower.kmin[kcut_min], "  kcut_max :", RSDPower.kmax[kcut_max]
     
-    matricesPP = [covariance_PP00[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
-                  covariance_PP02[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
-                  covariance_PP04[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
-                  covariance_PP02[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
-                  covariance_PP22[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
-                  covariance_PP24[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
-                  covariance_PP04[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
-                  covariance_PP24[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
-                  covariance_PP44[kcut_min:kcut_max+1,kcut_min:kcut_max+1]]
-    matricesPXi = [covariance_PXi00[kcut_min:kcut_max+1,rcut_min:rcut_max+1], \
-                   covariance_PXi02[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
-                   covariance_PXi04[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
-                   covariance_PXi20[kcut_min:kcut_max+1,rcut_min:rcut_max+1], \
-                   covariance_PXi22[kcut_min:kcut_max+1,rcut_min:rcut_max+1], \
-                   covariance_PXi24[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
-                   covariance_PXi40[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
-                   covariance_PXi42[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
-                   covariance_PXi44[kcut_min:kcut_max+1,rcut_min:rcut_max+1]]
+    matricesPP = [RSDPower.covariance_PP00[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP02[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
+                  RSDPower.covariance_PP04[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
+                  RSDPower.covariance_PP02[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP22[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
+                  RSDPower.covariance_PP24[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP04[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
+                  RSDPower.covariance_PP24[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
+                  RSDPower.covariance_PP44[kcut_min:kcut_max+1,kcut_min:kcut_max+1]]
+    matricesPXi = [RSDPower.covariance_PXi00[kcut_min:kcut_max+1,rcut_min:rcut_max+1], \
+                   RSDPower.covariance_PXi02[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi04[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi20[kcut_min:kcut_max+1,rcut_min:rcut_max+1], \
+                   RSDPower.covariance_PXi22[kcut_min:kcut_max+1,rcut_min:rcut_max+1], \
+                   RSDPower.covariance_PXi24[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi40[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi42[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi44[kcut_min:kcut_max+1,rcut_min:rcut_max+1]]
                    
     matricesXi = [RSDPower.covariance00[rcut_min:rcut_max+1,rcut_min:rcut_max+1],\
                   RSDPower.covariance02[rcut_min:rcut_max+1,rcut_min:rcut_max+1], \
@@ -741,7 +802,37 @@ def error_Total( kcut_min ,kcut_max ):
     DAT = np.column_stack(( Cov_PP, Cov_Xi, Cov_C_nooff, Cov_C ))
     np.savetxt(filename, DAT, delimiter=" ", fmt="%s")
 
+def Plot_dPb(file1_name):
 
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    file1 = open(file1_name)
+    dPb1=np.array(np.loadtxt(file1))
+    k = np.array(dPb1[:,0])
+    dPb_data=np.array(dPb1[:,1])
+    dPb_int = interp1d(k, dPb_data ,kind= "cubic")
+    dPb_interpolated = np.array([dPb_int(RSDPower.kcenter[i]) for i in range(len(RSDPower.kcenter))])
+    
+    fig, (ax1, ax2) = plt.subplots( nrows = 1, ncols = 2, figsize = (14,7))
+
+    ax1.loglog(RSDPower.kcenter, dPb_interpolated, 'b-', label='data : dlnk = 0.019, sdlnk = 0.0001')
+    ax1.loglog(RSDPower.kcenter, RSDPower.dPb0, 'r--',label='current : dlnk = {:>1.3f}, sdlnk = {:>1.4f}'.format(RSDPower.dlnk, RSDPower.sdlnk[2]) )
+    ax1.legend(loc=3, prop={'size':12})
+    ax1.set_xlabel('k')
+    ax1.set_ylabel('dP/db, zero')
+
+    ax2.semilogx(RSDPower.kcenter,RSDPower.dPb0 - dPb_interpolated, 'b-', label='current - data' )
+    ax2.legend(loc=3, prop={'size':12})
+    ax2.set_xlabel('k')
+    ax2.set_ylabel('current - data')
+
+    from matplotlib.backends.backend_pdf import PdfPages
+    pdfname = 'plots/compare/Compare_dPb0_r{:>1.3f}_k{:>1.3f}_sk{:>1.4f}.pdf'.format(RSDPower.dlnr, RSDPower.dlnk, RSDPower.sdlnk[2])
+    pdf=PdfPages( pdfname )
+    pdf.savefig(fig)
+    pdf.close()
+    print " pdf file saved : ", pdfname
 
 def Compare_Derivatives():
 
@@ -761,9 +852,7 @@ def Compare_Derivatives():
     
     import matplotlib.pyplot as plt
     
-    
-    #plt.subplot(3, 1, 1)
-    #fig, ax1, ax2 = plt.figure()
+
     fig, (ax1, ax2) = plt.subplots( nrows = 1, ncols = 2, figsize = (14,7))
     
     ax1.loglog(RSDPower.rcenter,TwoStep_dxib0, 'b-', label='Two, 0' )
@@ -776,12 +865,9 @@ def Compare_Derivatives():
     ax1.set_xlabel('r')
     ax1.set_ylabel('dxi/db')
     
-    #ax2.semilogx(RSDPower.rcenter,TwoStep_dxib0, 'b-', label='Two, 0' )
-    ax2.semilogx(RSDPower.rcenter,RSDPower.dxib0-TwoStep_dxib0, 'b.',label='0' )
-    #ax2.semilogx(RSDPower.rcenter,TwoStep_dxib2, 'r-',label='Two, 2' )
-    ax2.semilogx(RSDPower.rcenter,RSDPower.dxib2-TwoStep_dxib2, 'r.' ,label='2')
-    #ax2.semilogx(RSDPower.rcenter,TwoStep_dxib4, 'g-',label='Two, 4' )
-    ax2.semilogx(RSDPower.rcenter,RSDPower.dxib4-TwoStep_dxib4, 'g.',label='4' )
+    ax2.semilogx(RSDPower.rcenter,RSDPower.dxib0-TwoStep_dxib0 , 'b-',label='0' )
+    ax2.semilogx(RSDPower.rcenter,RSDPower.dxib2-TwoStep_dxib2, 'r-' ,label='2')
+    ax2.semilogx(RSDPower.rcenter,RSDPower.dxib4-TwoStep_dxib4, 'g-',label='4' )
     ax2.set_xlabel('r')
     ax2.set_ylabel('One Step - Two Step')
     ax2.legend(loc=1)
@@ -822,8 +908,43 @@ def Compare_Derivatives():
     print " pdf file saved : ", pdfname
 
 
+def Plot_derivatives():
+    
+    import numpy as np
+    import matplotlib.pyplot as plt
 
-def Reid_step2(l):
+
+    analytic_data = RSDPower.derivative_P_analytic(0.0)
+    print 'data obtained'
+    file = open('plots/compare/dPd0_analytic.txt')
+    Pkl=np.array(np.loadtxt(file))
+    Power=np.array(Pkl[:,1])
+    print "file load"
+    Pm = interp1d(RSDPower.skcenter, Power ,kind= "cubic")
+    print "interpolation over"
+    analytic = np.array([Pm(RSDPower.kcenter[i]) for i in range(len(RSDPower.kcenter))])
+    
+    fig, (ax1, ax2) = plt.subplots( nrows = 1, ncols = 2, figsize = (14,7))
+    
+    ax1.loglog(RSDPower.kcenter,analytic, 'b-', label='Analytic' )
+    ax1.loglog(RSDPower.kcenter,RSDPower.dPb0, 'b--',label='Numeric' )
+    ax1.legend(loc=3)
+    ax1.set_xlabel('r')
+    ax1.set_ylabel('dP/db, zero')
+    
+    ax2.loglog(RSDPower.kcenter,np.fabs(RSDPower.dPb0 - analytic)/analytic, 'b-', label='Two, 0' )
+    ax2.legend(loc=3)
+    ax2.set_xlabel('r')
+    ax2.set_ylabel('Analytic - Numeric')
+    
+    from matplotlib.backends.backend_pdf import PdfPages
+    pdfname = 'plots/compare/Compare_Derivatives_r{:>1.3f}_k{:>1.3f}_sk{:>1.4f}.pdf'.format(RSDPower.dlnr, RSDPower.dlnk, RSDPower.sdlnk[2])
+    pdf=PdfPages( pdfname )
+    pdf.savefig(fig)
+    pdf.close()
+    print " pdf file saved : ", pdfname
+
+def Reid_step2_kcut(l):
     
     
     matricesXi = [RSDPower.covariance00, RSDPower.covariance02, RSDPower.covariance04, np.transpose(RSDPower.covariance02), RSDPower.covariance22, RSDPower.covariance24,np.transpose(RSDPower.covariance04), np.transpose(RSDPower.covariance24), RSDPower.covariance44]
@@ -841,7 +962,7 @@ def Reid_step2(l):
     matrices2Xi = [RSDPower.dxip0, Xizeros,Xizeros,Xizeros,RSDPower.dxip2,Xizeros,Xizeros,Xizeros,RSDPower.dxip4]
     
     """ GET full size C_Xi"""
-    l_r = len(RSDPower.rcenter)
+    l_r = len(RSDPower.rcenter)-1
     C_matrix3 = CombineCovariance3(l_r, matricesXi)
     C_matrix2 = CombineCovariance2(l_r, matricesXi)
     Xi, Xi2 = CombineDevXi3(l_r, matrices2Xi)
@@ -851,7 +972,6 @@ def Reid_step2(l):
     Fisher_bandpower_Xi = FisherProjection(Xi, C_matrix3)
     cut = len(RSDPower.kcenter)
     
-    
     part00 = Fisher_bandpower_Xi[0:cut, 0:cut]
     part02 = Fisher_bandpower_Xi[0:cut, cut:2*cut]
     part04 = Fisher_bandpower_Xi[0:cut, 2*cut:3*cut+1]
@@ -859,15 +979,17 @@ def Reid_step2(l):
     part24 = Fisher_bandpower_Xi[cut:2*cut, 2*cut:3*cut+1]
     part44 = Fisher_bandpower_Xi[2*cut:3*cut+1, 2*cut:3*cut+1]
     
+    
     part_list = [ part00[kcut_min:kcut_max+1,kcut_min:kcut_max+1], part02[kcut_min:kcut_max+1,kcut_min:kcut_max+1], part04[kcut_min:kcut_max+1,kcut_min:kcut_max+1], np.transpose(part02[kcut_min:kcut_max+1,kcut_min:kcut_max+1]), part22[kcut_min:kcut_max+1,kcut_min:kcut_max+1], part24[kcut_min:kcut_max+1,kcut_min:kcut_max+1], np.transpose(part04[kcut_min:kcut_max+1,kcut_min:kcut_max+1]), np.transpose(part24[kcut_min:kcut_max+1,kcut_min:kcut_max+1]), part44[kcut_min:kcut_max+1,kcut_min:kcut_max+1]]
+    
 
     part_Fisher_bandpower_Xi = CombineCovariance3(l, part_list)
     part_Fisher_bandpower_Xi_two = CombineCovariance2(l, part_list)
     
     """ dP/dq"""
     XP, XP2 = CombineDevXi(l, matrices2P)
-    FisherXi = FisherProjection(XP, inv(part_Fisher_bandpower_Xi))
-    FisherXi_two = FisherProjection(XP2, inv(part_Fisher_bandpower_Xi_two))
+    FisherXi = FisherProjection_Fishergiven(XP, part_Fisher_bandpower_Xi)
+    FisherXi_two = FisherProjection_Fishergiven(XP2, part_Fisher_bandpower_Xi_two)
     
     """
     Cross = CrossCoeff( inv(Fisher_bandpower_Xi) )
@@ -889,9 +1011,52 @@ def Reid_step2(l):
     return rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal\
     ,error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2
 
+def Reid_step2(l):
+    
+    
+    matricesXi = [RSDPower.covariance00, RSDPower.covariance02, RSDPower.covariance04, np.transpose(RSDPower.covariance02), RSDPower.covariance22, RSDPower.covariance24,np.transpose(RSDPower.covariance04), np.transpose(RSDPower.covariance24), RSDPower.covariance44]
+    
+    matrices2P = [RSDPower.dPb0, RSDPower.dPb2, RSDPower.dPb4, RSDPower.dPf0, RSDPower.dPf2, RSDPower.dPf4, RSDPower.dPs0, RSDPower.dPs2, RSDPower.dPs4]
+    
+    #matrices2P = [RSDPower.dPb0[kcut_min:kcut_max+1], RSDPower.dPb2[kcut_min:kcut_max+1],\
+    #              RSDPower.dPb4[kcut_min:kcut_max+1], RSDPower.dPf0[kcut_min:kcut_max+1],\
+    #              RSDPower.dPf2[kcut_min:kcut_max+1], RSDPower.dPf4[kcut_min:kcut_max+1],\
+    #              RSDPower.dPs0[kcut_min:kcut_max+1], RSDPower.dPs2[kcut_min:kcut_max+1],\
+    #              RSDPower.dPs4[kcut_min:kcut_max+1]]
+                  
+    Xizeros = np.zeros((len(RSDPower.kcenter),len(RSDPower.rcenter)))
+    matrices2Xi = [RSDPower.dxip0, Xizeros,Xizeros,Xizeros,RSDPower.dxip2,Xizeros,Xizeros,Xizeros,RSDPower.dxip4]
+
+    """ correlation covariance """
+    C_matrix3 = CombineCovariance3(l, matricesXi)
+    C_matrix2 = CombineCovariance2(l, matricesXi)
+
+    Xi, Xi2 = CombineDevXi3(l, matrices2Xi)
+
+    """ F_bandpower """
+    part_Fisher_bandpower_Xi = FisherProjection(Xi, C_matrix3)
+    part_Fisher_bandpower_Xi_two = FisherProjection(Xi2, C_matrix2)
+    
+    """ dP/dq"""
+    l_k = len(RSDPower.kcenter)-1
+    XP, XP2 = CombineDevXi(l_k, matrices2P)
+    
+    FisherXi = FisherProjection_Fishergiven(XP, part_Fisher_bandpower_Xi)
+    FisherXi_two = FisherProjection_Fishergiven(XP2, part_Fisher_bandpower_Xi_two)
+    
+    error_b_marginal, error_f_marginal = FractionalError( RSDPower.b, RSDPower.f, inv(FisherXi))
+    error_b_determin, error_f_determin = FractionalError( RSDPower.b, RSDPower.f, inv(FisherXi[0:2,0:2]))
+    error_b_marginal2, error_f_marginal2 = FractionalError( RSDPower.b, RSDPower.f, inv(FisherXi_two))
+    error_b_determin2, error_f_determin2 = FractionalError( RSDPower.b, RSDPower.f, inv(FisherXi_two[0:2,0:2]))
+
+    rr = RSDPower.rcenter[l]
+    con_num = np.linalg.cond(FisherXi)
+    return rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal,error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2
+
+
 def Reid_step1(l):
 
-    
+
     matricesXi = [RSDPower.covariance00, RSDPower.covariance02, RSDPower.covariance04, np.transpose(RSDPower.covariance02), RSDPower.covariance22, RSDPower.covariance24,np.transpose(RSDPower.covariance04), np.transpose(RSDPower.covariance24), RSDPower.covariance44]
     
     matrices2Xi = [RSDPower.dxib0, RSDPower.dxib2, RSDPower.dxib4, RSDPower.dxif0, RSDPower.dxif2, RSDPower.dxif4, RSDPower.dxis0, RSDPower.dxis2, RSDPower.dxis4]
@@ -913,7 +1078,7 @@ def Reid_step1(l):
     return RSDPower.rcenter[l], error_b_determin, error_f_determin, error_b_marginal, error_f_marginal\
     ,error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2
 
-
+Reid_step2_kcut = np.vectorize(Reid_step2_kcut)
 Reid_step2 = np.vectorize(Reid_step2)
 Reid_step1 = np.vectorize(Reid_step1)
 error_only_CP = np.vectorize(error_only_CP)
