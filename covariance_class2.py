@@ -5,9 +5,9 @@ from numpy import vectorize
 from scipy.interpolate import interp1d
 from scipy.integrate import simps, quad
 #from scipy.special import eval_legendre
-from legen import eval_legendre
+#from legen import eval_legendre
 from numpy import vectorize
-from sbess import sbess
+#from sbess import sbess
 
 class RSD_covariance():
 
@@ -75,6 +75,20 @@ class RSD_covariance():
         \n ---------------------------------------------------'.format(self.n, self.KMAX, self.n2, np.log(self.rlist[1]/self.rlist[2]),np.log(self.klist[1]/self.klist[2]), self.sdlnk[2], self.subN )
 
 
+    def compile_fortran_modules(self):
+
+        import numpy.f2py.f2py2e as f2py2e
+        import sys
+        sys.argv +=  "-c -m sici sici.f90".split()
+        f2py2e.main()
+        sys.argv = [sys.argv[0]]
+        sys.argv +=  "-c -m sbess sbess.f90".split()
+        f2py2e.main()
+        sys.argv = [sys.argv[0]]
+        sys.argv +=  "-c -m legen legen.f90".split()
+        f2py2e.main()
+            
+            
     def MatterPower(self, file):
         
         #Pkl=np.array(np.loadtxt('matterpower_z_0.55.dat')) # z=0.55

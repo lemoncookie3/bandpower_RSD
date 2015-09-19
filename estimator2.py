@@ -22,9 +22,10 @@ from numpy.linalg import inv
 from numpy import vectorize
 from scipy.interpolate import interp1d
 from covariance_class2 import *
-
 import pp, sys, time, datetime
 from multiprocessing import Process, Queue
+
+
 
 #   Initialization
 
@@ -46,6 +47,9 @@ rN = 201  #101 for Reid # number of r bins
 subN = 201 #101 for Reid
 
 RSDPower = RSD_covariance(KMIN, KMAX, RMIN, RMAX, kN, rN, subN)
+#RSDPower.compile_fortran_modules()
+## run only for first time running
+
 file = open('matterpower_z_0.55.dat')
 #file = open('matterpower.dat')
 RSDPower.MatterPower(file)
