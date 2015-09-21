@@ -4,10 +4,6 @@ from numpy.linalg import inv
 from numpy import vectorize
 from scipy.interpolate import interp1d
 from scipy.integrate import simps, quad
-#from scipy.special import eval_legendre
-#from legen import eval_legendre
-from numpy import vectorize
-#from sbess import sbess
 
 class RSD_covariance():
 
@@ -66,13 +62,12 @@ class RSD_covariance():
         
         
         
-        print '\n---------------------------------------------------\
-        \n Fractional Error for parameter b, f \
-        \n z = 0.55 \n number of k bins n ={}, kmax = {}\
-        \n number of r bins n2 = {} \
-        \n dlnr = {}, dlnk={}, sdlnk={} \
-        \n subN = {} \
-        \n ---------------------------------------------------'.format(self.n, self.KMAX, self.n2, np.log(self.rlist[1]/self.rlist[2]),np.log(self.klist[1]/self.klist[2]), self.sdlnk[2], self.subN )
+        print '\n-------------------------------------------------------------------\
+        \n < Fractional Error for parameter b, f > \
+        \nz = 0.55\
+        \nnumber of k bins n ={}, subN = {}\
+        \nnumber of r bins n2 = {} \
+        \ndlnr = {}, dlnk={}, sdlnk={}'.format(self.n, self.subN, self.n2, np.log(self.rlist[1]/self.rlist[2]),self.dlnk, self.sdlnk[2] )
 
 
     def compile_fortran_modules(self):
@@ -188,10 +183,16 @@ class RSD_covariance():
             muint = (2 * l + 1.)/2 * simps( 4 * pi * kmatrix**2 * Pmmatrix * R, mumatrix, axis=0 )
             result = simps( muint, k )
             resultlist.append(result)
-        self.multipole_band = resultlist/Vi
-        return self.multipole_band
+        return resultlist/Vi
     
+    def multipole_bandpower_all(self):
+    
+        self.multipole_bandpower0 = self.multipole_P(0.0)
+        self.multipole_bandpower2 = self.multipole_P(2.0)
+        self.multipole_bandpower4 = self.multipole_P(4.0)
+        self.multipole_bandpower = np.concatenate((self.multipole_bandpower0, self.multipole_bandpower2,self.multipole_bandpower4), axis=0)
 
+    
     def RSDband_derivative_P(self,l):
         
         """ dP_l/dq """
@@ -529,7 +530,7 @@ class RSD_covariance():
         covariance_mutipole_PP = np.zeros((len(kcenter),len(kcenter)))
         np.fill_diagonal(covariance_mutipole_PP,Total)
 
-        print 'covariance_PP {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
+        #print 'covariance_PP {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
         return covariance_mutipole_PP
             
             
@@ -599,7 +600,7 @@ class RSD_covariance():
         covariance_mutipole_PP = np.zeros((len(kcenter),len(kcenter)))
         np.fill_diagonal(covariance_mutipole_PP,Total)
         
-        print 'covariance_PP {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
+        #print 'covariance_PP {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
         return covariance_mutipole_PP
   
     def RSDband_covariance_PP_All(self):
@@ -611,7 +612,8 @@ class RSD_covariance():
         self.covariance_PP24 = np.array(self.RSDband_covariance_PP(2.0,4.0))
         self.covariance_PP44 = np.array(self.RSDband_covariance_PP(4.0,4.0))
   
-  
+        print 'covariance_PP_All is finished (l = 0,2,4)'
+    
   
     def RSDband_covariance_PXi( self, l1, l2 ):
 
@@ -622,11 +624,7 @@ class RSD_covariance():
         from numpy import vectorize
         from scipy.interpolate import interp1d
         from scipy.integrate import simps, quad
-        #from scipy.special import eval_legendre
-        from legen import eval_legendre
-        from numpy import vectorize
-        from sbess import sbess
-    
+        
         import cmath
         I = cmath.sqrt(-1)
     
@@ -711,9 +709,26 @@ class RSD_covariance():
 
 
     def RSDband_covariance_PXi_All(self):
-    
+        
         import pp, sys, time
-    
+        """
+        from multiprocessing import Process, Queue
+        
+        def PXi_process(q, order, (l1, l2)):
+            re = self.RSDband_covariance_PXi(l1, l2)
+            q.put((order, re))
+        
+        inputs = ((0.0, 0.0),(0.0, 2.0),(0.0, 4.0),(2.0, 0.0),(2.0, 2.0),(2.0, 4.0),(4.0, 0.0),(4.0, 2.0),(4.0, 4.0))
+        q = Queue()
+        Processes = [Process(target = PXi_process, args=(q, z[0], z[1])) for z in zip(range(9), inputs)]
+        for p in Processes: p.start()
+        result = [q.get() for p in Processes]
+        result.sort()
+        result1 = [result[1] for r in result ]
+        result2 = [result[0] for r in result ]
+        print result2
+        
+        """
         ppservers = ()
         #ppservers = ("140.254.91.255","",)
     
@@ -724,7 +739,7 @@ class RSD_covariance():
         else:
             # Creates jobserver with automatically detected number of workers
             job_server = pp.Server(ppservers=ppservers)
-        print "Starting pp with", job_server.get_ncpus(), "workers \n"
+        print "\nStarting pp with", job_server.get_ncpus(), "workers"
     
         inputs1 = ((0.0, 0.0,),(0.0, 2.0,),(0.0, 4.0,),(2.0, 0.0,),(2.0, 2.0,),(2.0, 4.0,),(4.0, 0.0,),(4.0, 2.0,),(4.0, 4.0,))
         jobs1 = [ job_server.submit(self.RSDband_covariance_PXi, input, (Ll,avgBessel,)) for input in inputs1]
@@ -1098,6 +1113,8 @@ class RSD_covariance():
         #from scipy.special import eval_legendre
         from scipy.integrate import quad,simps
         from numpy import zeros, sqrt, pi, exp
+        from legen import eval_legendre
+        from sbess import sbess
         import cmath
         I = cmath.sqrt(-1)
         
@@ -1753,7 +1770,7 @@ def CombineCovariance3(l, matrices):
 def CombineCrossCovariance3(l1, l2, matrices):
 
     """ Input should be a list of matrices :
-        matrices = [00, 02, 04, 22, 24, 44] """
+        matrices = [00, 02, 04, 20, 22, 24, 40, 42, 44] """
         
     cov00 = matrices[0][0:l1+1,0:l2+1]
     cov02 = matrices[1][0:l1+1,0:l2+1]
@@ -1776,7 +1793,7 @@ def CombineCrossCovariance3(l1, l2, matrices):
 def CombineCovariance2(l, matrices):
     
     """ Input should be a list of matrices :
-        matrices = [00, 02, 04, 22, 24, 44] """
+        matrices = [00, 02, 04, 20, 22, 24, 40, 42, 44] """
     
     cov00 = matrices[0][0:l+1,0:l+1]
     cov02 = matrices[1][0:l+1,0:l+1]
@@ -1792,7 +1809,7 @@ def CombineCovariance2(l, matrices):
 
 def CombineCrossCovariance2(l1, l2, matrices):
     """ Input should be a list of matrices :
-        matrices = [00, 02, 04, 22, 24, 44] """
+        matrices = [00, 02, 04, 20, 22, 24, 40, 42, 44] """
     
     cov00 = matrices[0][0:l1+1,0:l2+1]
     cov02 = matrices[1][0:l1+1,0:l2+1]
@@ -1807,6 +1824,8 @@ def CombineCrossCovariance2(l1, l2, matrices):
 
 
 def CombineDevXi(l, matrices):
+    """ Input should be a list of matrices :
+        matrices = [00, 02, 04, 20, 22, 24, 40, 42, 44] """
 
     dxib0 = matrices[0][0:l+1]
     dxib2 = matrices[1][0:l+1]
@@ -1831,10 +1850,9 @@ def CombineDevXi(l, matrices):
     return Xi, Xi2
 
 def CombineDevXi3(l, matrices):
-    #
-    #   Input should be matrix
-    #   matrices = [ 8 matrices ]
-    #
+    """ Input should be a list of matrices :
+        matrices = [00, 02, 04, 20, 22, 24, 40, 42, 44] """
+    
     cov00 = matrices[0][:,0:l+1]
     cov02 = matrices[1][:,0:l+1]
     cov04 = matrices[2][:,0:l+1]
@@ -1868,11 +1886,11 @@ def FisherProjection( deriv, CovMatrix ):
     
     return FisherMatrix
 
-def FisherProjection_Fishergiven( deriv, Fisher ):
+def FisherProjection_Fishergiven( deriv, FisherM ):
     
     """ Projection for Fisher Matrix """
     
-    FisherMatrix = np.dot(np.dot(deriv, Fisher), np.transpose(deriv))
+    FisherMatrix = np.dot(np.dot(deriv, FisherM), np.transpose(deriv))
     for i in range(len(deriv)):
         for j in range(i, len(deriv)):
             FisherMatrix[j,i] = FisherMatrix[i,j]
@@ -2122,7 +2140,7 @@ def confidence_ellipse(x_mean, y_mean, labellist, *args, **kwargs ):
     
     for z in ziplist:
         vals, vecs = eigsorted(z[0])
-        print "values :", vals
+        #print "values :", vals
         theta = np.degrees(np.arctan2(*vecs[:,0][::-1]))
         nstd = np.sqrt(5.991) # 95% :4.605  #99% :9.210
         w, h = 2 * nstd * np.sqrt(vals)
