@@ -16,15 +16,15 @@ KMIN = 0.0001
 KMAX = 502.32
     
 # r scale
-RMIN = 0.1# 6. #29. # 24. #0.1 for Reid   #1.15 * np.pi / self.kmax
-RMAX = 180. #200.  #628.32 # for Reid  #1.15 * np.pi / self.kmin
+RMIN = 24. # 6. #29. # 24. #0.1 for Reid   #1.15 * np.pi / self.kmax
+RMAX = 152. #200.  #628.32 # for Reid  #1.15 * np.pi / self.kmin
     
 # REID (0.01~ 180) corresponding k value :(0.02 ~ 361.28)
 # REID convergence condition : kN = 61, rN = 151, subN = 101
 # REID convergence condition : kN = 101, rN = 101, subN = 121
-kN = 101  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
-rN = 501  #101 for Reid # number of r bins
-subN = 201 #101 for Reid
+kN = 61  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
+rN = 1001  #101 for Reid # number of r bins
+subN = 248# to keep sdlnk for 61 k bins, take subN = 248 #101 for Reid
 
 RSDPower = RSD_covariance(KMIN, KMAX, RMIN, RMAX, kN, rN, subN)
 #RSDPower.compile_fortran_modules()
@@ -38,14 +38,14 @@ RSDPower.Shell_avg_band()
     
 rcut_max = len(RSDPower.rcenter)-1
 rcut_min = 0 #25#len(RSDPower.rcenter)-1
-kcut_min = 50 #12 # 45 #150 #90#104
-kcut_max = 82#  len(RSDPower.kmax)-1 #24  #90
+kcut_min = 18  #12 # 45 #150 #90#104
+kcut_max = 29 #len(RSDPower.kmax)-1 #24  #90
     
-# 21,31 (61) 45, 73 (151) for BAO only (k : 0.02 ~ 0.3)
-# 18, 29(61) for BAO+RSD (k: 0.01 ~ 0.2))
+# 21,31 (61) 35,51 (101) 52, 77 (151) 173, 260 (501) for BAO only(29~200) (k : 0.02 ~ 0.3)
+# 18, 29(61) 30, 49(101) 46, 73 (151) 150, 246 (501) for BAO+RSD(24~152) (k: 0.01 ~ 0.2))
 # 12, 24(41) for big scale and small scale
-# 21, __(61) for Reid range # REID (0.01~ 180) corresponding k value :(0.02 ~ 361.28)
-# 50, (101) for Reid range # REID (0.01~ 180) corresponding k value :(0.02 ~ 361.28)
+# 21, __(61) for Reid range # REID (0.01~ 180) corresponding k value :(0.02 ~ 36.128)
+# 50, 82(101) for Reid range # REID (0.01~ 180) corresponding k value :(0.02 ~ 36.128)
 
 print "kcut_min :", RSDPower.kmin[kcut_min], "  kcut_max :", RSDPower.kmax[kcut_max]
 print "rcut_min :", RSDPower.rmin[rcut_max], "  rcut_max :", RSDPower.rmax[rcut_min], "\n"
@@ -88,7 +88,7 @@ def main():
     RSDPower.derivative_Xi_All()
     #RSDPower.RSDband_derivative_xi_All()
 
-    Compare_Derivatives()
+    #Compare_Derivatives()
     
 
     # test ======================================================================
@@ -112,8 +112,11 @@ def main():
     print np.sum(matricesXi)
     
     
-    error()
-    break
+    error(RMIN, RMAX, kcut_min, kcut_max)
+    
+    
+    error_ellipse_step1()
+    stop
     
     #-------------------------------------------------------
     # loop initial setting
@@ -269,7 +272,10 @@ def main():
     Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_f_determin, error_f_marginal, error_f_determin2, error_f_marginal2, pdfname = output_f_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0, ymax=0.07, basename='r_min'  )
     """
 
-def error():
+def error(RMIN, RMAX, kcut_min, kcut_max):
+    """ Two Step error plot and cofidenece ellipse " \
+        should be seperated later cuz they use different number of bins """
+    
     
     l1 = len(RSDPower.kcenter)-1
     l2 = len(RSDPower.rcenter)-1
@@ -332,8 +338,7 @@ def error():
                                             np.concatenate((Xizeros,Xizeros,RSDPower.dxip4), axis=1)),axis=0 )
                                             
     Derivatives = np.concatenate((derivative_P,derivative_correl_avg), axis=1)
-
-    
+  
 
     # for 3 modes
     C_matrix3PP = CombineCovariance3(l1, matricesPP)
@@ -363,8 +368,6 @@ def error():
     zeromatrix2 = np.zeros(( 2 * (kcut_max-kcut_min + 1) , 2 * (rcut_max-rcut_min + 1 )))
     C_matrix2 = np.concatenate((np.concatenate((C_matrix2PP, C_matrix2PXi), axis=1),np.concatenate((np.transpose(C_matrix2PXi), C_matrix2Xi), axis=1)), axis = 0)
     C_matrix2_nf = np.concatenate((np.concatenate((C_matrix2PP, zeromatrix2), axis=1),np.concatenate((np.transpose(zeromatrix2), C_matrix2Xi), axis=1)), axis = 0)
-
-    
     
     """ multipole band power covariance obtained from C_tot"""
     # marginalized s, three modes
@@ -400,7 +403,7 @@ def error():
 
     """ bandpower error linear plots """
     makedirectory('plots/RSD/band_error')
-    title = 'Fractional Error, l=0 \n  k = ({:>3.4f}, {:>3.4f}), r = ({:>0.4f}, {:>6.2f}) \n dlnr = {:>3.4f}, dlnk = {:>3.4f}, sdlnk = {:>3.4}'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.dlnr, RSDPower.dlnk, RSDPower.sdlnk[2])
+    title = 'Fractional Error, l=0 \n  k = ({:>3.4f}, {:>3.4f}), r = ({:>0.4f}, {:>6.2f}) \n dlnr = {:>3.4f}, dlnk = {:>3.4f}, sdlnk = {:>3.4}, kN={}, rN={}, subN={}'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.dlnr, RSDPower.dlnk, RSDPower.sdlnk[2], RSDPower.n, RSDPower.n2, RSDPower.subN)
     pdfname = 'plots/RSD/band_error/fractional00_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
     pdfname2 = 'plots/RSD/band_error/mag_fractional00_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
     """
@@ -426,7 +429,6 @@ def error():
     XP, XP2 = CombineDevXi(l1, matrices2P)
     XP_cut, XP2_cut = CombineDevXi(l1, matrices2P_cut)
     
-    
     # Fisher, all modes, s marginalized
     FisherPP = FisherProjection(XP_cut, C_matrix3PP)
     FisherXi = FisherProjection_Fishergiven(XP, Fisher_bandpower_Xi)
@@ -444,7 +446,7 @@ def error():
     FisherXi_d = FisherProjection_Fishergiven(XP[0:2,:], Fisher_bandpower_Xi)
     FisherC_nf_d = FisherProjection_Fishergiven(XP[0:2,:], Fisher_bandpower_nf)
     FisherC_d = FisherProjection_Fishergiven(XP[0:2,:], Fisher_bandpower)
-
+    
     
     Cov_PP = inv(FisherPP)
     Cov_Xi = inv(FisherXi)
@@ -460,7 +462,8 @@ def error():
     Cov_Xi_d = inv(FisherXi_d)
     Cov_C_nooff_d = inv(FisherC_nf_d)
     Cov_C_d = inv(FisherC_d)  
-
+    
+    """
     print '- - - - - - - - - - - - - - - - -'
     print '  Cov_PP :', np.sum(Cov_PP)
     print '  Cov_Xi :', np.sum(Cov_Xi)
@@ -469,20 +472,21 @@ def error():
     print '- - - - - - - - - - - - - - - - -'
     print Cov_PP[0:2,0:2], Cov_Xi[0:2,0:2], Cov_C_nooff[0:2,0:2], Cov_C[0:2,0:2]
     print '- - - - - - - - - - - - - - - - -'
+    """
     
     makedirectory('plots/RSD/ellipse')
     # ellipse, all modes, marginalized
-    title = 'Confidence Ellipse for b and f, l = 0,2,4 \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
-    pdfname = 'plots/RSD/ellipse/ConfidenceEllipseTotal_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
+    title = 'Confidence Ellipse for b,f Two Step, l = 0,2,4 \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
+    pdfname = 'plots/RSD/ellipse/TwoConfidenceEllipseTotal_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
     labellist = ['$C_{P}$','$C_{Xi}$','$C_{nooff}$','$C_{total}$']
     confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP[0:2,0:2], Cov_Xi[0:2,0:2], Cov_C_nooff[0:2,0:2], Cov_C[0:2,0:2], title = title, pdfname = pdfname)
     # ellipse, two modes, marginalized
-    title2 = 'Confidence Ellipse for b and f, l = 0,2 \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
-    pdfname2 = 'plots/RSD/ellipse/ConfidenceEllipseTwomodes_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
+    title2 = 'Confidence Ellipse for b,f Two Step, l = 0,2 \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
+    pdfname2 = 'plots/RSD/ellipse/TwoConfidenceEllipseTwomodes_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
     confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP2[0:2,0:2], Cov_Xi2[0:2,0:2], Cov_C2_nooff[0:2,0:2], Cov_C2[0:2,0:2], title = title2, pdfname = pdfname2)
     # ellipse, all modes, determined
-    title3 = 'Confidence Ellipse for b and f, l = 0,2,4  ($\sigma$ determined) \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
-    pdfname3 = 'plots/RSD/ellipse/ConfidenceEllipseTotal_magi_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
+    title3 = 'Confidence Ellipse for b,f Two Step, l = 0,2,4  ($\sigma$ determined) \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
+    pdfname3 = 'plots/RSD/ellipse/TwoConfidenceEllipseTotal_magi_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
     labellist = ['$C_{P}$','$C_{Xi}$','$C_{nooff}$','$C_{total}$']
     confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP_d, Cov_Xi_d, Cov_C_nooff_d, Cov_C_d, title = title3, pdfname = pdfname3)
 
@@ -511,6 +515,7 @@ def Only_ellipse():
     confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP, Cov_Xi, Cov_C_nooff, Cov_C, title = title, pdfname = pdfname)
 
 def error_only_CP(l):
+    """ Step 1 b ad f from P covaraicne error plot """
     
     matricesPP = [RSDPower.covariance_PP00, RSDPower.covariance_PP02, RSDPower.covariance_PP04,RSDPower.covariance_PP02, RSDPower.covariance_PP22, RSDPower.covariance_PP24,RSDPower.covariance_PP04, RSDPower.covariance_PP24, RSDPower.covariance_PP44]
     matrices2P = [RSDPower.dPb0, RSDPower.dPb2, RSDPower.dPb4, RSDPower.dPf0, RSDPower.dPf2, RSDPower.dPf4, RSDPower.dPs0, RSDPower.dPs2, RSDPower.dPs4]
@@ -543,6 +548,8 @@ def error_only_CP(l):
     return rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal, error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2
 
 def error_only_Cxi(l):
+    """ don't need anymore...? same with Reid_Step1(l) """
+    
     matricesXi = [covariance00, covariance02, covariance04, np.transpose(covariance02), covariance22, covariance24,np.transpose(covariance04), np.transpose(covariance24), covariance44]
     
     Xizeros = np.zeros((len(RSDPower.kcenter),rcut_max - rcut_min + 1))
@@ -630,13 +637,13 @@ def error_ellipse():
     """ projection to b and f space"""
     Fisher_marginal = FisherProjection(XP, C_bandpower)
     Fisher_determin = Fisher_marginal[0:2,0:2] #FisherProjection(Xi2, C_matrix2)
-    Fisher_marginal2 = FisherProjection(XP2, C_bandpower2)
-    Fisher_determin2 = Fisher_marginal2[0:2,0:2] #FisherProjection(Xi2, C_matrix2)
+    #Fisher_marginal2 = FisherProjection(XP2, C_bandpower2)
+    #Fisher_determin2 = Fisher_marginal2[0:2,0:2] #FisherProjection(Xi2, C_matrix2)
     
     Cov_marginal = inv(Fisher_marginal)
     Cov_determin = inv(Fisher_determin)
-    Cov_marginal2 = inv(Fisher_marginal2)
-    Cov_determin2 = inv(Fisher_determin2)
+    #Cov_marginal2 = inv(Fisher_marginal2)
+    #Cov_determin2 = inv(Fisher_determin2)
     
     covlist = [Cov_marginal[0:2,0:2], Cov_determin, Cov_marginal2[0:2,0:2],Cov_determin2]
     confidence_ellipse(covlist, RSDPower.b, RSDPower.f)
@@ -1049,6 +1056,95 @@ def Reid_step1(l):
 
     return RSDPower.rcenter[l], error_b_determin, error_f_determin, error_b_marginal, error_f_marginal\
     ,error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2
+
+def error_ellipse_step1():
+    
+    
+    l1 = len(RSDPower.kcenter)-1
+    l2 = len(RSDPower.rcenter)-1
+
+        
+    matricesPP = [RSDPower.covariance_PP00[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP02[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP04[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP02[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP22[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP24[kcut_min:kcut_max+1,kcut_min:kcut_max+1], \
+                  RSDPower.covariance_PP04[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP24[kcut_min:kcut_max+1,kcut_min:kcut_max+1],\
+                  RSDPower.covariance_PP44[kcut_min:kcut_max+1,kcut_min:kcut_max+1]]
+    matricesPXi = [RSDPower.covariance_PXi00[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi02[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi04[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi20[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi22[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi24[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi40[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi42[kcut_min:kcut_max+1,rcut_min:rcut_max+1],\
+                   RSDPower.covariance_PXi44[kcut_min:kcut_max+1,rcut_min:rcut_max+1]]
+        
+    matricesXi = [RSDPower.covariance00[rcut_min:rcut_max+1,rcut_min:rcut_max+1],\
+                  RSDPower.covariance02[rcut_min:rcut_max+1,rcut_min:rcut_max+1],\
+                  RSDPower.covariance04[rcut_min:rcut_max+1,rcut_min:rcut_max+1],\
+                  np.transpose(RSDPower.covariance02[rcut_min:rcut_max+1,rcut_min:rcut_max+1]),\
+                  RSDPower.covariance22[rcut_min:rcut_max+1,rcut_min:rcut_max+1],\
+                  RSDPower.covariance24[rcut_min:rcut_max+1,rcut_min:rcut_max+1],\
+                  np.transpose(RSDPower.covariance04[rcut_min:rcut_max+1,rcut_min:rcut_max+1]),\
+                  np.transpose(RSDPower.covariance24[rcut_min:rcut_max+1,rcut_min:rcut_max+1]),\
+                  RSDPower.covariance44[rcut_min:rcut_max+1,rcut_min:rcut_max+1]]
+        
+    matrices2P = [RSDPower.dPb0[kcut_min:kcut_max+1], RSDPower.dPb2[kcut_min:kcut_max+1],RSDPower.dPb4[kcut_min:kcut_max+1], RSDPower.dPf0[kcut_min:kcut_max+1],RSDPower.dPf2[kcut_min:kcut_max+1], RSDPower.dPf4[kcut_min:kcut_max+1],  RSDPower.dPs0[kcut_min:kcut_max+1], RSDPower.dPs2[kcut_min:kcut_max+1], RSDPower.dPs4[kcut_min:kcut_max+1]]
+    matrices2Xi = [RSDPower.dxib0[rcut_min:rcut_max+1], RSDPower.dxib2[rcut_min:rcut_max+1], RSDPower.dxib4[rcut_min:rcut_max+1], RSDPower.dxif0[rcut_min:rcut_max+1], RSDPower.dxif2[rcut_min:rcut_max+1], RSDPower.dxif4[rcut_min:rcut_max+1], RSDPower.dxis0[rcut_min:rcut_max+1], RSDPower.dxis2[rcut_min:rcut_max+1], RSDPower.dxis4[rcut_min:rcut_max+1]]
+        
+    C_matrix3PP = CombineCovariance3(l1, matricesPP)
+    C_matrix3PXi = CombineCrossCovariance3(l1, l2, matricesPXi)
+    C_matrix3Xi = CombineCovariance3(l2, matricesXi)
+    C_matrix3PXi_zero = np.zeros((3 * (kcut_max - kcut_min + 1), 3 * (rcut_max - rcut_min + 1)))
+        
+    C_matrix2PP = CombineCovariance2(l1, matricesPP)
+    C_matrix2PXi = CombineCrossCovariance2(l1, l2, matricesPXi)
+    C_matrix2Xi = CombineCovariance2(l2, matricesXi)
+    C_matrix2PXi_zero = np.zeros((2 * (kcut_max - kcut_min + 1) , 2 * (rcut_max - rcut_min + 1)))
+        
+    C_matrix3 = np.concatenate((np.concatenate((C_matrix3PP, C_matrix3PXi), axis=1),np.concatenate((np.transpose(C_matrix3PXi), C_matrix3Xi), axis=1)), axis = 0)
+    C_matrix2 = np.concatenate((np.concatenate((C_matrix2PP, C_matrix2PXi), axis=1),np.concatenate((np.transpose(C_matrix2PXi), C_matrix2Xi), axis=1)), axis = 0)
+        
+    C_matrix3_nooff = np.concatenate((np.concatenate((C_matrix3PP, C_matrix3PXi_zero), axis=1),np.concatenate((np.transpose(C_matrix3PXi_zero), C_matrix3Xi), axis=1)), axis = 0)
+        
+    XP, XP2 = CombineDevXi(l1, matrices2P)
+    XXi, XXi2 = CombineDevXi(l2, matrices2Xi)
+        
+    Xi = np.concatenate((XP, XXi), axis = 1)
+    Xi2 = np.concatenate((XP2, XXi2), axis = 1)
+        
+        
+    # Fisher, all modes, s marginalized
+    FisherPP = FisherProjection(XP, C_matrix3PP)
+    FisherXi = FisherProjection(XXi, C_matrix3Xi)
+    FisherC_nooff = FisherProjection(Xi, C_matrix3_nooff)
+    FisherC = FisherProjection(Xi, C_matrix3)
+        
+    Cov_PP = inv(FisherPP)
+    Cov_Xi = inv(FisherXi)
+    Cov_C_nooff = inv(FisherC_nooff)
+    Cov_C = inv(FisherC)
+    """
+    print '- - - - - - - - - - - - - - - - -'
+    print '  Cov_PP :', np.sum(Cov_PP)
+    print '  Cov_Xi :', np.sum(Cov_Xi)
+    print '  Cov_tot:', np.sum(Cov_C)
+    print '  Cov_nf :', np.sum(Cov_C_nooff)
+    print '- - - - - - - - - - - - - - - - -'
+    print Cov_PP[0:2,0:2], Cov_Xi[0:2,0:2], Cov_C_nooff[0:2,0:2], Cov_C[0:2,0:2]
+    print '- - - - - - - - - - - - - - - - -'
+    """
+    makedirectory('plots/RSD/ellipse')
+    # ellipse, all modes, marginalized
+    title = 'Confidence Ellipse for b,f One Step, l = 0,2,4 \n rmin={:>3.5f} rmax={:>3.2f} kmin={:>3.5f} kmax={:>3.2f}'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max] )
+    pdfname = 'plots/RSD/ellipse/OneConfidenceEllipseTotal_r{:>3.2f}_{:>3.2f}_k{:>3.2f}_{:>3.2f}_rN{}kN{}.pdf'.format(RSDPower.rmin[rcut_max],RSDPower.rmax[rcut_min],RSDPower.kmin[kcut_min],RSDPower.kmax[kcut_max], RSDPower.n2, RSDPower.n )
+    labellist = ['$C_{P}$','$C_{Xi}$','$C_{nooff}$','$C_{total}$']
+    confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP[0:2,0:2], Cov_Xi[0:2,0:2], Cov_C_nooff[0:2,0:2], Cov_C[0:2,0:2], title = title, pdfname = pdfname)
+
 
 
 Reid_step2_kcut = np.vectorize(Reid_step2_kcut)

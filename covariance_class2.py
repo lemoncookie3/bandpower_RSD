@@ -678,7 +678,7 @@ class RSD_covariance():
             Rintegral2 = simps( R * Le_matrix1 * Le_matrix2, mumatrix, axis= 0 )
             
             kmatrix2 = k[matrix4] # 2D
-            Pmmatrix = 1. #Pm[matrix4]
+            Pmmatrix = 1 #Pm[matrix4]
             Vir = 4 * pi * rmatrix**2 * drmatrix + 1./3 * pi * (drmatrix)**3
             AvgBesselmatrix = avgBessel(l2,kmatrix2,rminmatrix,rmaxmatrix)/Vir #2D
             result1 = simps( 4 * pi * kmatrix2**2 * Pmmatrix**2 * Rintegral3 * AvgBesselmatrix, k, axis=0 )
@@ -2158,7 +2158,9 @@ def confidence_ellipse(x_mean, y_mean, labellist, *args, **kwargs ):
     
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
-    plt.legend(elllist, labellist, loc=4, prop={'size':8})
+    ax.set_xlabel('b')
+    ax.set_ylabel('f')
+    plt.legend(elllist, labellist, loc=4, prop={'size':10})
     plt.scatter(x_mean, y_mean)
     plt.title( title )
     
