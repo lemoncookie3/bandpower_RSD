@@ -551,14 +551,13 @@ class RSD_covariance():
         mulist = self.mulist
         dk = self.dk
         dlnk = self.dlnk
-        Pmlist = 1. #self.Pmlist
+        Pmlist = 1 #self.Pmlist
         matterpower = self.RealPowerBand
         s = self.s
         b = self.b
         f = self.f
         Vs = self.Vs
         nn = self.nn
-    
     
         # FirstTerm + SecondTerm
         matrix1, matrix2 = np.mgrid[0:len(mulist),0:self.subN]
@@ -567,7 +566,6 @@ class RSD_covariance():
         Le_matrix1 = Ll(l1,mumatrix)
         Le_matrix2 = Ll(l2,mumatrix)
         Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
-        
         
         Const_alpha = (2*l1 + 1.) * (2*l2 + 1.) * (2*pi)**3 /Vs
        
@@ -599,9 +597,10 @@ class RSD_covariance():
         Total = FirstTerm + SecondTerm + LastTerm
         covariance_mutipole_PP = np.zeros((len(kcenter),len(kcenter)))
         np.fill_diagonal(covariance_mutipole_PP,Total)
-        
+
         #print 'covariance_PP {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
         return covariance_mutipole_PP
+  
   
     def RSDband_covariance_PP_All(self):
     
@@ -1682,6 +1681,17 @@ class RSD_covariance():
         print 'RSD_covariance_Xi {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
         return FirstTerm + SecondTerm + LastTerm
 
+def get_closest_index_in_data( value, data ):
+
+    for i in range(len(data)):
+        if data[i] < value : pass
+        elif data[i] >= value :
+            if np.fabs(value - data[i]) > np.fabs(value - data[i-1]):
+                value_index = i-1
+            else : value_index = i
+            break
+    
+    return value_index
 
 
 def Ll(l,x):

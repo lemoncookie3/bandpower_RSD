@@ -12,19 +12,26 @@ from multiprocessing import Process, Queue
 print '\nestimator 2'
 print datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d %H:%M:%S')
 
+# int range
 KMIN = 0.0001
 KMAX = 502.32
     
 # r scale
-RMIN = 24. # 6. #29. # 24. #0.1 for Reid   #1.15 * np.pi / self.kmax
-RMAX = 152. #200.  #628.32 # for Reid  #1.15 * np.pi / self.kmin
-    
+RMIN = 1.
+RMAX = 50.
+# k scale
+kmin = 0.01
+kmax = 0.2
+# BAO+RSD(r 24 ~ 152) (k: 0.01 ~ 0.2))
+# BAO only(r 29 ~ 200) (k : 0.02 ~ 0.3)
+
+
 # REID (0.01~ 180) corresponding k value :(0.02 ~ 361.28)
 # REID convergence condition : kN = 61, rN = 151, subN = 101
 # REID convergence condition : kN = 101, rN = 101, subN = 121
-kN = 61  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
-rN = 1001  #101 for Reid # number of r bins
-subN = 248# to keep sdlnk for 61 k bins, take subN = 248 #101 for Reid
+kN = 51  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
+rN = 201  #101 for Reid # number of r bins
+subN = 201 # to keep sdlnk for 61 k bins, take subN = 248 #101 for Reid
 
 RSDPower = RSD_covariance(KMIN, KMAX, RMIN, RMAX, kN, rN, subN)
 #RSDPower.compile_fortran_modules()
@@ -35,21 +42,92 @@ file = open('matterpower_z_0.55.dat')
 RSDPower.MatterPower(file)
 RSDPower.Shell_avg_band()
 
+"""
+def find_kcut_function( kmin, kmax ):
+    data_kmin = RSDPower.kmin
+    data_kmax = RSDPower.kmax
     
+    for i in range(len(RSDPower.kmin)):
+        if data_kmin[i] < kmin : pass
+        elif data_kmin[i] >= kmin :
+            if np.fabs(kmin - data_kmin[i]) > np.fabs(kmin - data_kmin[i-1]):
+                kcut_min = i-1
+            else : kcut_min = i
+            break
+    for i in range(len(RSDPower.kmax)):
+        if data_kmax[i] < kmax : pass
+        elif data_kmax[i] >= kmax:
+            if np.fabs(kmax - data_kmax[i]) > np.fabs(kmax - data_kmax[i-1]):
+                kcut_max = i-1
+            else : kcut_max = i
+            break
+    return kcut_min, kcut_max
+"""
+
 rcut_max = len(RSDPower.rcenter)-1
-rcut_min = 0 #25#len(RSDPower.rcenter)-1
-kcut_min = 18  #12 # 45 #150 #90#104
-kcut_max = 29 #len(RSDPower.kmax)-1 #24  #90
-    
-# 21,31 (61) 35,51 (101) 52, 77 (151) 173, 260 (501) for BAO only(29~200) (k : 0.02 ~ 0.3)
-# 18, 29(61) 30, 49(101) 46, 73 (151) 150, 246 (501) for BAO+RSD(24~152) (k: 0.01 ~ 0.2))
-# 12, 24(41) for big scale and small scale
-# 21, __(61) for Reid range # REID (0.01~ 180) corresponding k value :(0.02 ~ 36.128)
-# 50, 82(101) for Reid range # REID (0.01~ 180) corresponding k value :(0.02 ~ 36.128)
+rcut_min = 0
+kcut_min = get_closest_index_in_data( kmin, RSDPower.kmin )
+kcut_max = get_closest_index_in_data( kmax, RSDPower.kmax )
 
 print "kcut_min :", RSDPower.kmin[kcut_min], "  kcut_max :", RSDPower.kmax[kcut_max]
 print "rcut_min :", RSDPower.rmin[rcut_max], "  rcut_max :", RSDPower.rmax[rcut_min], "\n"
 
+
+
+def plot_from_data():
+    
+    k_1_data = np.array(np.loadtxt('plots/RSD/fractionalerr_difference_RSDBAO_k5.0.txt')) # z=0.55
+    #Pkl=np.array(np.loadtxt(file))
+    # dlnk     	 kN           Vi              errorP         errorXi        diff          relative_diff
+    kN101=np.array(k_1_data[0,:])
+    kN201=np.array(k_1_data[1,:])
+    kN401=np.array(k_1_data[2,:])
+
+
+    k_index = get_closest_index_in_data( 5.0, RSDPower.kcenter )
+    k_value = RSDPower.kcenter[k_index]
+    Shell_Volume_log = 4 * pi * RSDPower.kmin[k_index]**3 * RSDPower.dlnk * (1 + 3./2 * (RSDPower.dlnk + RSDPower.dlnk**2))
+    print Shell_Volume_log
+    def calculate_number(data):
+        from numpy import sqrt
+        dlnk = data[0]
+        Vi = data[2]# 4 * pi * k_value**2 * RSDPower.dk[k_index] + 1./3 * pi * (RSDPower.dk[k_index])**3 #data[2]
+        N = data[2] * RSDPower.Vs /(2 * np.pi)**3 / 2
+        NsquareInverse = 1./sqrt(N)
+        P = data[3]
+        Xi = data[4]
+        difference = data[5]
+        list = np.array([dlnk, Vi, N, NsquareInverse,P,Xi,difference])
+        print dlnk, Vi, N, NsquareInverse,P,Xi,difference
+        return list
+    print 'dlnk, Vi, N, NsquareInverse, P, Xi, difference'
+
+    #calculate_number(kN401)
+    kN101list = calculate_number(kN101)
+    kN201list = calculate_number(kN201)
+    kN401list = calculate_number(kN401)
+    
+    def calculate_ratio(one, two):
+        from numpy import sqrt
+        ratio = one/two
+        dlnk_ratio = ratio[0]
+        N_ratio = ratio[2]
+        N_ratio_sqrt = 1./sqrt(N_ratio)
+        V_ratio = ratio[1]
+        P_ratio = ratio[4]
+        Xi_ratio = ratio[5]
+        difference = ratio[6]
+        print dlnk_ratio, V_ratio, N_ratio,N_ratio_sqrt,P_ratio,Xi_ratio,difference
+        return dlnk_ratio, V_ratio, N_ratio,N_ratio_sqrt,P_ratio,Xi_ratio,difference
+    print '\ndlnk_ratio, V_ratio, N_ratio, N_ratio_sqrt, P_ratio, Xi_ratio, difference'
+
+    #calculate_ratio(kN201, kN401)
+    calculate_ratio(kN101list, kN201list)
+    calculate_ratio(kN201list, kN401list)
+    calculate_ratio(kN101list, kN401list)
+    #calculate_ratio(kN81, kN401)
+
+#plot_from_data()
 
 def main():
 
@@ -65,20 +143,6 @@ def main():
     RSDPower.RSDband_derivative_P_All()
     # dPb0, dPf0, dPs0, dPb2, dPf2, dPs2, dPb4, dPf4, dPs4 = RSDPower.RSDband_derivative_P_All()
     
-    """
-    DAT = np.column_stack(( RSDPower.kcenter, RSDPower.dPb0))
-    filename1 = 'plots/compare/dPb0_sk{:>1.3f}_k{:>1.3f}.txt'.format(RSDPower.sdlnk[2], RSDPower.dlnk)
-    np.savetxt(filename1, DAT, delimiter=" ", fmt="%s")
-    print "txt saved : ", filename1
-    stop
-    """
-    """
-    file1 = 'plots/compare/dPb0_sk0.000_k0.038.txt' # kN401, subN251
-    file2 = 'plots/compare/dPb0_sk0.000_k0.019.txt' # kN801, subN125
-    
-    Plot_dPb(file2)
-    stop
-    """
     #Plot_derivatives()
     #stop
     
@@ -87,7 +151,7 @@ def main():
     
     RSDPower.derivative_Xi_All()
     #RSDPower.RSDband_derivative_xi_All()
-
+    
     #Compare_Derivatives()
     
 
@@ -99,6 +163,34 @@ def main():
     ##calling function for covariance matrix components Cp_ll'
     RSDPower.RSDband_covariance_PP_All()
 
+    """
+    given_k = 5.0
+    print 'k = ', given_k
+    k_index = get_closest_index_in_data(given_k, RSDPower.kcenter)
+    print "kindex", k_index
+    k_value = RSDPower.kcenter[k_index]
+    k_value_log = sqrt(RSDPower.kmin[k_index] + RSDPower.kmax[k_index])
+    Shell_Volume = 4 * pi * k_value**2 * RSDPower.dk[k_index] + 1./3 * pi * (RSDPower.dk[k_index])**3
+    Shell_Volume_log = 4 * pi * RSDPower.kmin[k_index]**3 * RSDPower.dlnk * (1 + 3./2 * (RSDPower.dlnk + RSDPower.dlnk**2))
+    num_modes = Shell_Volume * RSDPower.Vs /2. /(2*pi)**3
+    print Shell_Volume, Shell_Volume_log
+    error_P_tot = FractionalErrorBand( RSDPower.multipole_bandpower0, RSDPower.covariance_PP00)
+    list101 = np.array([RSDPower.dlnk, RSDPower.n, Shell_Volume, num_modes, error_P_tot[k_index]])
+    print 'dlnk      kN         Vi       N      errorP  '
+    print list101
+
+
+
+    list201 = np.array([0.0767640683521,  201,  108.989127352,  1098458310.51,  0.634140171196])
+    
+    #print list101/list201
+    print "Volume :", (list101/list201)[2]
+    print "Modes :", (list101/list201)[3]
+    print "1/sqrt(N) :",np.sqrt(1./(list101/list201)[3])
+    print "frac P :", (list101/list201)[4]
+    
+    stop
+    """
     RSDPower.RSDband_covariance_PXi_All()
     ## parallel python applied.
     ## check! it could not be retrieved by order
@@ -112,10 +204,8 @@ def main():
     print np.sum(matricesXi)
     
     
-    error(RMIN, RMAX, kcut_min, kcut_max)
-    
-    
-    error_ellipse_step1()
+    error()
+    #error_ellipse_step1()
     stop
     
     #-------------------------------------------------------
@@ -272,7 +362,7 @@ def main():
     Linear_plot( rr, ['det', 'marg', 'det2', 'marg2'], error_f_determin, error_f_marginal, error_f_determin2, error_f_marginal2, pdfname = output_f_pdf, title = plot_title, xmin=0.0, xmax=60.0, ymin=0.0, ymax=0.07, basename='r_min'  )
     """
 
-def error(RMIN, RMAX, kcut_min, kcut_max):
+def error():
     """ Two Step error plot and cofidenece ellipse " \
         should be seperated later cuz they use different number of bins """
     
@@ -329,8 +419,8 @@ def error(RMIN, RMAX, kcut_min, kcut_max):
     derivative_P0 = np.identity(len(RSDPower.kcenter))[:,kcut_min:kcut_max+1]
     Pzeros = np.zeros((len(RSDPower.kcenter),kcut_max-kcut_min+1))
     derivative_P = np.concatenate((np.concatenate((derivative_P0, Pzeros, Pzeros),axis=1 ),\
-                                   np.concatenate((Pzeros, derivative_P0,Pzeros),axis=1 ),\
-                                   np.concatenate((Pzeros, Pzeros,derivative_P0),axis=1 )), axis=0)
+                                   np.concatenate((Pzeros, derivative_P0, Pzeros),axis=1 ),\
+                                   np.concatenate((Pzeros, Pzeros, derivative_P0),axis=1 )), axis=0)
     Xizeros = np.zeros((len(RSDPower.kcenter),rcut_max - rcut_min + 1))
 
     derivative_correl_avg = np.concatenate(( np.concatenate((RSDPower.dxip0,Xizeros,Xizeros), axis=1),\
@@ -343,7 +433,6 @@ def error(RMIN, RMAX, kcut_min, kcut_max):
     # for 3 modes
     C_matrix3PP = CombineCovariance3(l1, matricesPP)
     C_matrix3PXi = CombineCrossCovariance3(l1, l2, matricesPXi)
-    #C_matrix3PXi = np.zeros((3 * len(RSDPower.kcenter), 3 * len(RSDPower.rcenter)))
     C_matrix3Xi = CombineCovariance3(l2, matricesXi)
     C_matrix3PP_total = CombineCovariance3(l1, matricesPP_total)
     
@@ -355,9 +444,9 @@ def error(RMIN, RMAX, kcut_min, kcut_max):
     # for 2 modes
 
     derivative_P2 = np.concatenate((np.concatenate((derivative_P0, Pzeros),axis=1 ),\
-                                    np.concatenate((derivative_P0,Pzeros),axis=1 )), axis=0)
+                                    np.concatenate((Pzeros, derivative_P0),axis=1 )), axis=0)
     derivative_correl_avg2 = np.concatenate(( np.concatenate((RSDPower.dxip0,Xizeros), axis=1),\
-                                            np.concatenate((RSDPower.dxip2,Xizeros), axis=1)),axis=0 )
+                                            np.concatenate((Xizeros, RSDPower.dxip2), axis=1)),axis=0 )
     Derivatives2 = np.concatenate((derivative_P2,derivative_correl_avg2), axis=1)
     C_matrix2PP = CombineCovariance2(l1, matricesPP)
     C_matrix2PXi = CombineCrossCovariance2(l1, l2, matricesPXi)
@@ -382,7 +471,7 @@ def error(RMIN, RMAX, kcut_min, kcut_max):
     Fisher_bandpower2 = FisherProjection(Derivatives2, C_matrix2)
     Fisher_bandpower2_nf = FisherProjection(Derivatives2, C_matrix2_nf)
     
-    bandpower_base = RSDPower.multipole_bandpower #[0:len(RSDPower.kcenter)+1]
+    bandpower_base = RSDPower.multipole_bandpower
     
     """
     k_base = np.concatenate((RSDPower.kcenter,RSDPower.kcenter,RSDPower.kcenter),axis=1)
@@ -394,35 +483,86 @@ def error(RMIN, RMAX, kcut_min, kcut_max):
     Contour_plot( RSDPower.kcenter, CrossCoeff( k_base, inv(Fisher_bandpower_nf)), pdfname='Cnf.pdf' )
     """
 
-    """ fractional error for bandpower 00 """
-    error_P = FractionalErrorBand( bandpower_base, C_matrix3PP_total)[0:len(RSDPower.kcenter)]
-    error_Xi = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower_Xi))[0:len(RSDPower.kcenter)]
-    error_Ctot = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower))[0:len(RSDPower.kcenter)]
-    error_Cnf = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower_nf))[0:len(RSDPower.kcenter)]
+    """ fractional error for bandpower """
+    error_P_list = FractionalErrorBand( bandpower_base, C_matrix3PP_total)
+    error_Xi_list = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower_Xi))
+    error_Ctot_list = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower))
+    error_Cnf_list = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower_nf))
 
 
+    error_P0 = error_P_list[0:len(RSDPower.kcenter)]
+    error_Xi0 = error_Xi_list[0:len(RSDPower.kcenter)]
+    error_Ctot0 = error_Ctot_list[0:len(RSDPower.kcenter)]
+    error_Cnf0 = error_Cnf_list[0:len(RSDPower.kcenter)]
+    
+    error_P2 = error_P_list[len(RSDPower.kcenter):2*len(RSDPower.kcenter)]
+    error_Xi2 = error_Xi_list[len(RSDPower.kcenter):2*len(RSDPower.kcenter)]
+    error_Ctot2 = error_Ctot_list[len(RSDPower.kcenter):2*len(RSDPower.kcenter)]
+    error_Cnf2 = error_Cnf_list[len(RSDPower.kcenter):2*len(RSDPower.kcenter)]
+    
+    error_P4 = error_P_list[2*len(RSDPower.kcenter):3*len(RSDPower.kcenter)]
+    error_Xi4 = error_Xi_list[2*len(RSDPower.kcenter):3*len(RSDPower.kcenter)]
+    error_Ctot4 = error_Ctot_list[2*len(RSDPower.kcenter):3*len(RSDPower.kcenter)]
+    error_Cnf4 = error_Cnf_list[2*len(RSDPower.kcenter):3*len(RSDPower.kcenter)]
+    
+
+    
+    # --------------------------------------------------------------
+    """
+    given_k = 5.0
+    print 'k = ', given_k
+
+    k_index = get_closest_index_in_data(given_k, RSDPower.kcenter)
+    k_value = RSDPower.kcenter[k_index]
+    k_value_log = sqrt(RSDPower.kmin[k_index] + RSDPower.kmax[k_index])
+    Shell_Volume = 4 * pi * k_value**2 * RSDPower.dk[k_index] + 1./3 * pi * (RSDPower.dk[k_index])**3
+    Shell_Volume_log = 4 * pi * RSDPower.kmin[k_index]**3 * RSDPower.dlnk * (1 + 3./2 * (RSDPower.dlnk + RSDPower.dlnk**2))
+    
+    print Shell_Volume, Shell_Volume_log
+    error_P_tot = FractionalErrorBand( bandpower_base, C_matrix3PP_total)
+    result = '{}  {}  {}  {}  {}  {}  {} \n'.format(RSDPower.dlnk, RSDPower.n, Shell_Volume, error_P_tot[k_index], error_Xi[k_index], error_Xi[k_index]-error_P[k_index], (error_Xi[k_index]-error_P[k_index])/error_P[k_index])
+    print 'dlnk      kN         Vi          errorP          errorXi         diff        relative_diff'
+    print result
+    file = open( 'plots/RSD/fractionalerr_difference_RSDBAO.txt', 'a' )
+    file.write('# rN = {}, k = {}, BAO only scale \n dlnk      kN       Vi              errorP              errorXi             diff          relative_diff \n'.format(RSDPower.n2, given_k))
+    file.write( result )
+    print 'txt file saved : plots/RSD/fractionalerr_difference.txt'
+    """
+    # --------------------------------------------------------------
+    
+    
     """ bandpower error linear plots """
     makedirectory('plots/RSD/band_error')
     title = 'Fractional Error, l=0 \n  k = ({:>3.4f}, {:>3.4f}), r = ({:>0.4f}, {:>6.2f}) \n dlnr = {:>3.4f}, dlnk = {:>3.4f}, sdlnk = {:>3.4}, kN={}, rN={}, subN={}'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.dlnr, RSDPower.dlnk, RSDPower.sdlnk[2], RSDPower.n, RSDPower.n2, RSDPower.subN)
     pdfname = 'plots/RSD/band_error/fractional00_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
     pdfname2 = 'plots/RSD/band_error/mag_fractional00_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
-    """
-    # full plot
-    Linear_plot( RSDPower.kcenter,['P','Xi','C_tot', 'C_nf'], error_P ,error_Xi,error_Ctot, error_Cnf, title = title, pdfname = pdfname, ymax = 10**11, ymin = 10**(-5), xmax = 10**(3), xmin = 10**(-5), scale='log' )
-    
-    # magnified plot
-    Linear_plot2( RSDPower.kcenter,['P','Xi','C_tot', 'C_nf'], error_P, error_Xi, error_Ctot, error_Cnf, title = title, pdfname = pdfname2, ymax = 10., ymin = 10**(-3), xmax = 10., xmin = 10**(-3), scale='log')
-    """
+
     
     # full plot
-    Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], error_P[kcut_min:kcut_max+1], ['P','Xi','C_tot', 'C_nf'], error_P ,error_Xi,error_Ctot, error_Cnf, title = title, pdfname = pdfname, ymax = 10**11, ymin = 10**(-5), xmax = 10**(3), xmin = 10**(-5), scale='log' )
+    Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], error_P0[kcut_min:kcut_max+1], ['P','Xi','C_tot', 'C_nf'], error_P0 ,error_Xi0,error_Ctot0, error_Cnf0, title = title, pdfname = pdfname, ymax = 10**11, ymin = 10**(-5), xmax = 10**(3), xmin = 10**(-5), scale='log' )
     
     # magnified plot
-    Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], error_P[kcut_min:kcut_max+1], ['P','Xi','C_tot', 'C_nf'], error_P, error_Xi, error_Ctot, error_Cnf, title = title, pdfname = pdfname2, ymax = 10., ymin = 10**(-3), xmax = 10., xmin = 10**(-3), scale='log')
+    Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], error_P0[kcut_min:kcut_max+1], ['P','Xi','C_tot', 'C_nf'], error_P0, error_Xi0, error_Ctot0, error_Cnf0, title = title, pdfname = pdfname2, ymax = 10., ymin = 10**(-3), xmax = 10., xmin = 10**(-3), scale='log')
+    
+    #mode 2 and 4 plotting
+    """
+    
+    title22 = 'Fractional Error, l=2 \n  k = ({:>3.4f}, {:>3.4f}), r = ({:>0.4f}, {:>6.2f}) \n dlnr = {:>3.4f}, dlnk = {:>3.4f}, sdlnk = {:>3.4}, kN={}, rN={}, subN={}'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.dlnr, RSDPower.dlnk, RSDPower.sdlnk[2], RSDPower.n, RSDPower.n2, RSDPower.subN)
+    pdfname22 = 'plots/RSD/band_error/fractional22_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
+    pdfname22_2 = 'plots/RSD/band_error/mag_fractional22_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
+    
+    # magnified plot
+    Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], error_P2[kcut_min:kcut_max+1], ['P','Xi','C_tot', 'C_nf'], error_P2, error_Xi2, error_Ctot2, error_Cnf2, title = title22, pdfname = pdfname22, ymax = 10**11, ymin = 10**(-5), xmax = 10**(3), xmin = 10**(-5), scale= 'log' )
+    Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], error_P2[kcut_min:kcut_max+1], ['P','Xi','C_tot', 'C_nf'], error_P2, error_Xi2, error_Ctot2, error_Cnf2, title = title22, pdfname = pdfname22_2, ymax = 10., ymin = 10**(-3), xmax = 10., xmin = 10**(-3), scale= 'log')
     
     
+    title44 = 'Fractional Error, l=4 \n  k = ({:>3.4f}, {:>3.4f}), r = ({:>0.4f}, {:>6.2f}) \n dlnr = {:>3.4f}, dlnk = {:>3.4f}, sdlnk = {:>3.4}, kN={}, rN={}, subN={}'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.dlnr, RSDPower.dlnk, RSDPower.sdlnk[2], RSDPower.n, RSDPower.n2, RSDPower.subN)
+    pdfname44 = 'plots/RSD/band_error/mag_fractional44_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
     
-    
+    # magnified plot
+    Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], error_P4[kcut_min:kcut_max+1], ['P','Xi','C_tot', 'C_nf'], error_P4, error_Xi4, error_Ctot4, error_Cnf4, title = title44, pdfname = pdfname44, ymax = 10., ymin = 10**(-3), xmax = 10., xmin = 10**(-3), scale='log')
+    """
+    stop
     #------------------------------------------------------------
     """ projection to b and f space"""
 
