@@ -15,7 +15,7 @@ class RSD_covariance():
         self.f=0.74
         self.Vs= 5.0*10**9 # survey volume
         self.s= 3.5  # sigma in Power spectrum
-        self.nn=3.0 * 10**(-4) # shot noise : \bar{n}
+        self.nn= 100. # 3.0 * 10**(-4) # shot noise : \bar{n}
 
         # k scale range
         self.KMIN = KMIN
@@ -64,7 +64,7 @@ class RSD_covariance():
         
         print '\n-------------------------------------------------------------------\
         \n < Fractional Error for parameter b, f > \
-        \nz = 0.55\
+        \nz = 0.0\
         \nnumber of k bins n ={}, subN = {}\
         \nnumber of r bins n2 = {} \
         \ndlnr = {}, dlnk={}, sdlnk={}'.format(self.n, self.subN, self.n2, np.log(self.rlist[1]/self.rlist[2]),self.dlnk, self.sdlnk[2] )
@@ -82,6 +82,7 @@ class RSD_covariance():
         sys.argv = [sys.argv[0]]
         sys.argv +=  "-c -m legen legen.f90".split()
         f2py2e.main()
+        sys.argv = [sys.argv[0]]
             
             
     def MatterPower(self, file):
@@ -146,8 +147,346 @@ class RSD_covariance():
         np.fill_diagonal( self.RSDPowerFishermatrix, self.Vs/(8 * pi**2) * np.array(resultlist) )
         
         return self.RSDPowerFishermatrix
-        
+            
+    
+    def PowerCovMatrix( self ):
+        # NO RSD
+        # func for constructing Power Spectrum covariance matrix
+        # C(k,k')
+        """ note: survey volume definition """
+        kcenter, dlnk, Vs, nn = self.kcenter, self.dlnk, self.Vs, self.nn
+        dk = self.dk
+        Shell_avg_bandpower = self.Shell_avg_band()
+    
+        V = 4./3 * np.pi * self.RMAX**3
+        PowerCovariance = np.zeros((len(kcenter),len(kcenter)))
+        Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        Mode = (2 * pi)**3 / Vi
+        PowerCov = 2./V * (Shell_avg_bandpower + 1./nn)**2 * Mode
+        for i in range(len(kcenter)):
+            PowerCovariance[i,i] = PowerCov[i]
 
+        self.PowerCovariance = PowerCovariance
+        return self.PowerCovariance
+
+
+    
+    def window_tophat_k( self, k, kj ):
+        """ 3D spherical top hat weight function
+            ki : center of k grid
+            R : radius """
+            
+        from numpy import pi, fabs, cos, sin
+        R = self.RMAX
+        V = 4./3 * pi * R**3
+        kkj = fabs(k-kj)
+
+        weightj = 4 * pi/np.sqrt(V)/kkj**3 * ( -kkj * R * cos(kkj*R) + sin(kkj*R) )
+        
+        result = weightj
+        return result
+    
+    def window_tophat_r( self, r, ki):
+        """ 3D spherical top hat weight in configuration space
+            Fourier modes """
+    
+        from numpy import pi, e
+    
+        R = self.RMAX
+        V = 4./3 * pi * R**3
+    
+        weighti = 4 * pi * ( -ki*R*cos(ki*R) + sin(ki * R)/ki**3/V )
+        
+        return weighti
+
+
+    def windowed_P(self):
+        
+        """ C_ij = S_ij + N_ij """
+    
+        klist = self.klist
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        skbin = self.skbin
+        dk = self.dk
+        mulist = self.mulist
+        dlnk = self.dlnk
+        matterpower = self.RealPowerBand
+    
+        matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(skcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
+        matrix7, matrix8 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        
+        kmatrix = skcenter[matrix1]
+        kjmatrix = skcenter[matrix2]
+
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        
+        # window function shell averaging
+        
+        Va = 4 * pi * kcenter**2 * dk * (1. + 1./12 * (dk/kcenter)**2)
+        
+        weightj = self.window_tophat_k(kmatrix, kjmatrix)
+        np.fill_diagonal(weightj, diagonal)
+
+        weightj_list=[]
+        for i in range(len(kcenter)):
+            sk = skcenter[i*self.subN:i*self.subN+self.subN]
+            skmatrix = sk[matrix4]
+            weightj_cut = weightj[:,i*self.subN:i*self.subN+self.subN]
+            int = simps(skmatrix**2 /(2*pi**2) * weightj_cut ,skmatrix, axis=1 )
+            weightj_list.append(int)
+        
+        shell_avg_weightj = np.transpose(np.array(weightj_list))/Va[matrix6]
+        
+        
+        kmatrix2 = skcenter[matrix5]
+        Pmatrix = matterpower[matrix5]
+        normali_factor = simps(kmatrix2**2/(2*pi**2) * shell_avg_weightj**2, kmatrix2, axis=0 )
+        signal_list = []
+        noise_list=[]
+        for i in range(len(kcenter)):
+            
+            #weightj = self.window_tophat_k(kmatrix, kjmatrix)
+            #np.fill_diagonal( weightj, diagonal )
+            window_matrix = shell_avg_weightj * shell_avg_weightj[:, i][matrix5]
+            #normali_factor_j = normali_factor_i[i] * np.ones(len(kcenter)) #simps(kmatrix2**2/(2*pi**2) * shell_avg_weightj[:, i][matrix5]**2, kmatrix2, axis=0 )
+            signal = simps( kmatrix2**2/(2*pi**2) * Pmatrix * window_matrix, kmatrix2, axis=0 )
+            noise = 1./self.nn * simps( kmatrix2**2/(2*pi**2) * window_matrix, kmatrix2, axis=0 )
+            signal_list.append(signal)
+            noise_list.append(noise)
+        
+        normali_factor_i = normali_factor[matrix7]
+        normali_factor_j = normali_factor[matrix8]
+        normali_factor_matrix = np.sqrt(normali_factor_i * normali_factor_j)
+        
+        def window_plotting():
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_pdf import PdfPages
+            fig = plt.figure()
+            for i in np.arange(30, 51, 2):
+                
+                test_weightj = self.window_tophat_k(skcenter[matrix5], kcenter[matrix6])
+                window_i = shell_avg_weightj[:, i]**2
+                normalized_window_i = window_i/normali_factor_matrix[i,i]
+                plt.plot( self.skcenter, normalized_window_i, label='i = {}'.format(i))
+            plt.legend(loc=1)
+            plt.xlim(0.01, 0.5)
+            plt.title('Top hat window function W_ii(k) in Fourier space ( Rmax = 200 Mpc/h )\n i : index of k grid')
+            #plt.show()
+            pdfname = 'normalized.pdf'
+            print ' pdf file saved : ', pdfname
+            pdf=PdfPages( pdfname )
+            pdf.savefig(fig)
+            pdf.close()
+        #window_plotting()
+        
+        self.Signal_P = np.array(signal_list) /normali_factor_matrix
+        self.Noise_P = np.array(noise_list) /normali_factor_matrix
+        
+        self.windowed_Power = self.Signal_P + self.Noise_P
+        
+        return self.windowed_Power
+            
+    
+    def windowed_Xi(self):
+    
+        """ C_ij = S_ij + N_ij """
+    
+        klist = self.klist
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        skbin = self.skbin
+        dk = self.dk
+        mulist = self.mulist
+        dlnk = self.dlnk
+        rcenter = self.rcenter
+        dr = self.dr
+        rmin = self.rmin
+        rmax = self.rmax
+        matterpower = self.RealPowerBand
+    
+        matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(rcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(rcenter),0:len(rcenter)]
+        kmatrix = skcenter[matrix1]
+        Pmatrix = matterpower[matrix1]
+        rmatrix = rcenter[matrix2]
+        rminmatrix = rmin[matrix2]
+        rmaxmatrix = rmax[matrix2]
+    
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+    
+        """
+        weightj = self.window_tophat_k(kmatrix, kjmatrix)
+        np.fill_diagonal( weightj, diagonal )
+        test_window_matrix = (weightj)**2
+        
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+        
+        fig = plt.figure()
+        plt.semilogx(kcenter, test_window_matrix[:,30])
+        plt.semilogx(kcenter, test_window_matrix[:,35])
+        plt.semilogx(kcenter, test_window_matrix[:,40])
+        plt.semilogx(kcenter, test_window_matrix[:,45])
+        plt.semilogx(kcenter, test_window_matrix[:,50])
+        plt.semilogx(kcenter, test_window_matrix[:,55])
+        plt.semilogx(kcenter, test_window_matrix[:,60])
+        plt.semilogx(kcenter, test_window_matrix[:,65])
+        plt.semilogx(kcenter, test_window_matrix[:,70])
+        plt.title('Window Function')
+        plt.xlim(0.001, 10.)
+        plt.show()
+        
+        pdf=PdfPages( 'window.pdf' )
+        pdf.savefig(fig)
+        pdf.close()
+        """
+        
+        
+        
+        Vir = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2)
+        AvgBesselmatrix1 = avgBessel(0.0,kmatrix,rminmatrix,rmaxmatrix)/Vir[matrix2]
+        
+        self.Signal_Xi = np.array([ simps(kmatrix**2/(2 * pi**2) * Pmatrix * AvgBesselmatrix1 * AvgBesselmatrix1[:, i][matrix1], kmatrix, axis=0 )/V for i in range(len(rcenter)) ])
+        self.Noise_Xi = 1./(self.nn * V) * np.identity(len(rcenter)) /Vir[matrix3]
+        self.windowed_Xiance = self.Signal_Xi + self.Noise_Xi
+        
+        return self.windowed_Xiance
+
+
+    def dCdp(self):
+        """ C,a = dC_ij / dp_a """
+        """ weight : top hat """
+        
+        from numpy.linalg import pinv
+        
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        dk = self.dk
+        
+        matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(skcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
+        matrix7, matrix8 = np.mgrid[0:self.subN,0:len(kcenter)]
+        matrix9, matrix10 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        
+        kmatrix = skcenter[matrix1]
+        kjmatrix = skcenter[matrix2]
+        
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        
+        
+        # window function shell averaging
+        weightj = self.window_tophat_k(kmatrix, kjmatrix)
+        np.fill_diagonal(weightj, diagonal)
+        Va = 4 * pi * kcenter**2 * dk * (1. + 1./12 * (dk/kcenter)**2)
+        
+        #normali_factor = simps(kmatrix**2/(2*pi**2) * weightj**2, kmatrix, axis=0 )
+        #normali_factor_i = normali_factor[matrix1]
+        #normali_factor_j = normali_factor[matrix2]
+        #normali_factor_matrix = np.sqrt(normali_factor_i * normali_factor_j)
+        #weightj = weightj/np.sqrt(normali_factor_i)
+        
+        weightj_list=[]
+        for i in range(len(kcenter)):
+            sk = skcenter[i*self.subN:i*self.subN+self.subN]
+            skmatrix = sk[matrix4]
+            weightj_cut = weightj[:,i*self.subN:i*self.subN+self.subN]
+            int = simps(skmatrix**2 /(2*pi**2) * weightj_cut ,skmatrix, axis=1 )
+            weightj_list.append(int)
+        
+        shell_avg_weightj = np.transpose(np.array(weightj_list))/Va[matrix6]
+        
+        
+        kmatrix3 = skcenter[matrix5]
+        
+        normali_factor = simps(kmatrix3**2/(2*pi**2) * shell_avg_weightj**2, kmatrix3, axis=0 )
+        normali_factor_i = normali_factor[matrix9]
+        normali_factor_j = normali_factor[matrix10]
+        normali_factor_matrix = np.sqrt(normali_factor_i * normali_factor_j)
+        
+        dCdp_list = []
+        for i in range(len(kcenter)):
+            sk = skcenter[i*self.subN : i*self.subN+self.subN]
+            kmatrix = sk[matrix7]
+            shell_avg_weightj_cut = shell_avg_weightj[i*self.subN:i*self.subN+self.subN, :]
+          
+            list = []
+            for j in range(len(kcenter)):
+                window_matrix = shell_avg_weightj_cut * shell_avg_weightj_cut[:, j][matrix7]
+                int = simps( kmatrix**2/(2*pi**2) * window_matrix, kmatrix, axis=0 )
+                list.append(int)
+            dCdp_a = np.array(list)/normali_factor_matrix
+            dCdp_list.append(dCdp_a)
+        dCdp_list = np.array(dCdp_list)
+        return dCdp_list
+
+
+    def dCXidp(self):
+        """ C,a = dCxi_ij / dp_a """
+        """ weight : top hat """
+    
+        from numpy.linalg import pinv
+        from numpy import pi
+    
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        rcenter = self.rcenter
+        dr = self.dr
+        rmin = self.rmin
+        rmax = self.rmax
+    
+    
+        matrix1, matrix2 = np.mgrid[0:self.subN , 0:len(rcenter)]
+        
+        rminmatrix = rmin[matrix2]
+        rmaxmatrix = rmax[matrix2]
+    
+        R = self.RMAX
+        V = 4./3 * pi * R**3
+        Vir = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2)
+        
+    
+        dCdp_list = []
+        for i in range(len(kcenter)):
+            sk = skcenter[i*self.subN : i*self.subN+self.subN]
+            skmatrix = sk[matrix1]
+            AvgBesselmatrix = avgBessel(0.0,skmatrix,rminmatrix,rmaxmatrix)/Vir[matrix2]
+            list = []
+            for j in range(len(rcenter)):
+                int = simps( skmatrix**2/(2*pi**2) * AvgBesselmatrix * AvgBesselmatrix[:,j][matrix1], skmatrix, axis=0 )
+                list.append(int)
+            dCdp_a = np.array(list)
+            dCdp_list.append(dCdp_a)
+        dCdp_list = np.array(dCdp_list)/V
+        return dCdp_list
+
+
+
+    def Quadratic_Fisher(self, Cov, dCov):
+        
+        from numpy.linalg import pinv
+     
+        invC = pinv(Cov)
+        
+        Fisher = []
+        for dC1 in dCov:
+            for dC2 in dCov:
+                Fisher_ab = 1./2 * np.trace( np.dot( np.dot( np.dot( invC, dC1  ), invC ), dC2  ))
+                Fisher.append(Fisher_ab)
+
+        Fisher = np.reshape( np.array(Fisher), (len(dCov), len(dCov)))
+
+        return Fisher
 
 
     def multipole_P(self,l):
@@ -1925,7 +2264,7 @@ def FractionalErrorBand( params, CovarianceMatrix  ):
 
 def CrossCoeff( Matrix ):
     
-    """ Cross Corelation matrix   C_ij / Sqrt( C_ii * C_jj)"""
+    """ Cross Corelation matrix   C_ij / Sqrt( C_ii * C_jj) """
     
     matrix1,matrix2 = np.mgrid[0:len(Matrix[0]),0:len(Matrix[0])]
     diagonal = Matrix.diagonal()
@@ -2188,7 +2527,6 @@ def Linear_plot( base, valuename, *args, **kwargs ):
     #
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
-    
     
     basename = kwargs.get('basename','k')
     title = kwargs.get('title', 'Fractional Error')
