@@ -6,6 +6,8 @@ from scipy.interpolate import interp1d
 from covariance_class2 import *
 import pp, sys, time, datetime
 from multiprocessing import Process, Queue
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 
 #   Initialization
 
@@ -17,8 +19,8 @@ KMIN = 0.0001
 KMAX = 502.32
     
 # r scale
-RMIN = 1.
-RMAX = 50.
+RMIN = 29. #24.
+RMAX = 200. #152.
 # k scale
 kmin = 0.01
 kmax = 0.2
@@ -29,18 +31,20 @@ kmax = 0.2
 # REID (0.01~ 180) corresponding k value :(0.02 ~ 361.28)
 # REID convergence condition : kN = 61, rN = 151, subN = 101
 # REID convergence condition : kN = 101, rN = 101, subN = 121
-kN = 51  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
-rN = 201  #101 for Reid # number of r bins
-subN = 201 # to keep sdlnk for 61 k bins, take subN = 248 #101 for Reid
+
+kN = 61  #converge perfectly at 151, 2by2 components converge at 121 # the number of k bins. the sample should be odd
+rN = 101  #101 for Reid # number of r bins
+subN = 101 # to keep sdlnk for 61 k bins, take subN = 248 #101 for Reid
 
 RSDPower = RSD_covariance(KMIN, KMAX, RMIN, RMAX, kN, rN, subN)
-#RSDPower.compile_fortran_modules()
-## run only for first time running
+#RSDPower.compile_fortran_modules() ## run only for the first time running
+
 
 file = open('matterpower_z_0.55.dat')
-#file = open('matterpower.dat')
+#file = open('camb_LINmatterpower_z0.0.dat')
 RSDPower.MatterPower(file)
 RSDPower.Shell_avg_band()
+
 
 """
 def find_kcut_function( kmin, kmax ):
@@ -129,6 +133,7 @@ def plot_from_data():
 
 #plot_from_data()
 
+
 def main():
 
 
@@ -154,6 +159,17 @@ def main():
     
     #Compare_Derivatives()
     
+    
+    
+    """
+    rcut = 1
+    print RSDPower.rcenter[rcut]
+    data = RSDPower.dxip0[:,rcut:rcut+1]
+    import matplotlib.pyplot as plt
+    plt.semilogx(RSDPower.kcenter, data)
+    plt.show()
+    """
+
 
     # test ======================================================================
     
@@ -202,7 +218,7 @@ def main():
     
     matricesXi = [RSDPower.covariance00, RSDPower.covariance02, RSDPower.covariance04, np.transpose(RSDPower.covariance02), RSDPower.covariance22, RSDPower.covariance24,np.transpose(RSDPower.covariance04), np.transpose(RSDPower.covariance24), RSDPower.covariance44]
     print np.sum(matricesXi)
-    
+
     
     error()
     #error_ellipse_step1()
@@ -363,6 +379,9 @@ def main():
     """
 
 def error():
+    
+    from numpy.linalg import inv
+    
     """ Two Step error plot and cofidenece ellipse " \
         should be seperated later cuz they use different number of bins """
     
@@ -473,17 +492,55 @@ def error():
     
     bandpower_base = RSDPower.multipole_bandpower
     
-    """
-    k_base = np.concatenate((RSDPower.kcenter,RSDPower.kcenter,RSDPower.kcenter),axis=1)
-    r_base = np.concatenate((RSDPower.rcenter,RSDPower.rcenter,RSDPower.rcenter),axis=1)
     
-    Contour_plot( RSDPower.kcenter, CrossCoeff( k_base, C_matrix3PP_total), pdfname='CPP.pdf' )
-    Contour_plot( RSDPower.kcenter, CrossCoeff( k_base, inv(Fisher_bandpower_Xi)), pdfname='CXi.pdf' )
-    Contour_plot( RSDPower.kcenter, CrossCoeff( k_base, inv(Fisher_bandpower)), pdfname='Ctot.pdf' )
-    Contour_plot( RSDPower.kcenter, CrossCoeff( k_base, inv(Fisher_bandpower_nf)), pdfname='Cnf.pdf' )
-    """
+    # cumulative SNR --------------------------------------------------------------------
+    
+    def cumulative_SNR_all():
+    
+    
+        numberlist_kk = np.arange(1, len(RSDPower.kcenter))
+        kklist, SNR_PP0_list, SNR_Xi0_list, SNR_PP_list, SNR_Xi_list = Cumulative_SNR_loop(numberlist_kk)
+        print SNR_Xi_list
+        #SNR_P = cumulative_SNR( RSDPower.multipole_bandpower0, C_matrix3PP_total )[0:len(RSDPower.kcenter)]
+        #SNR_Xi_kcut = cumulative_SNR( RSDPower.multipole_bandpower0, np.linalg.inv(Fisher_bandpower_Xi) )[0:len(RSDPower.kcenter)]
+        #SNR_tot = cumulative_SNR( RSDPower.multipole_bandpower0, np.linalg.inv(Fisher_bandpower) )[0:len(RSDPower.kcenter)]
+        #k_base = np.concatenate((RSDPower.kcenter, RSDPower.kcenter,RSDPower.kcenter),axis=1)
+        Linear_plot( kklist, [ 'P0', 'Xi0', 'P','Xi'], SNR_PP0_list, SNR_Xi0_list, SNR_PP_list, SNR_Xi_list, scale = 'log', title = 'Cumulative SNR \n (rmin : {:>3.3f} rmax : {:>3.3f})'.format(RMIN, RMAX), pdfname = 'plots/cumulative_snr_rmin{:>3.3f}_rmax{:>3.3f}.pdf'.format(RMIN, RMAX), ymin = 10**(-9), ymax = 10**9, xmin = 0.001, ylabel='Cumulative SNR' )
+    cumulative_SNR_all()
+    
+    # contour plot-----------------------------------------------------------------------
+    
+    k_base = np.concatenate((RSDPower.kcenter,RSDPower.kcenter,RSDPower.kcenter),axis=1)
+    #r_base = np.concatenate((RSDPower.rcenter,RSDPower.rcenter,RSDPower.rcenter),axis=1)
+    
+    #
+    makedirectory('plots/RSD/contour')
+    Contour_plot( RSDPower.kcenter, CrossCoeff( inv(C_matrix3PP_total[0:len(RSDPower.kcenter),0:len(RSDPower.kcenter)])), pdfname='plots/RSD/contour/CPP0_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n) )
+    Contour_plot( RSDPower.kcenter, CrossCoeff( Fisher_bandpower_Xi[0:len(RSDPower.kcenter),0:len(RSDPower.kcenter)]), pdfname='plots/RSD/contour/CXi0_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n) )
+    Contour_plot( RSDPower.kcenter, CrossCoeff( Fisher_bandpower[0:len(RSDPower.kcenter),0:len(RSDPower.kcenter)]), pdfname='plots/RSD/contour/Ctot0_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n) )
+    
+    # -----------------------------------------------------------------------------------
+    
+    local_error_P = (np.diag(1./np.sqrt(inv(C_matrix3PP_total)))/bandpower_base)[0:len(RSDPower.kcenter)]
+    local_error_Xi = (np.diag(1./np.sqrt(Fisher_bandpower_Xi))/bandpower_base)[0:len(RSDPower.kcenter)]
+    local_error_tot = (np.diag(1./np.sqrt(Fisher_bandpower))/bandpower_base)[0:len(RSDPower.kcenter)]
+    
+
+    
+    title = 'Local Fractional Error, l=0 \n  k = ({:>3.4f}, {:>3.4f}), r = ({:>0.4f}, {:>6.2f}) \n dlnr = {:>3.4f}, dlnk = {:>3.4f}, sdlnk = {:>3.4}, kN={}, rN={}, subN={}'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.dlnr, RSDPower.dlnk, RSDPower.sdlnk[2], RSDPower.n, RSDPower.n2, RSDPower.subN)
+    pdfname = 'plots/RSD/band_error/local_fractional00_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
+    pdfname2 = 'plots/RSD/band_error/local_mag_fractional00_k{:>3.4f}_{:>3.4f}_r_{:>3.4f}_{:>3.4f}_rN{}kN{}.pdf'.format(RSDPower.kmin[kcut_min], RSDPower.kmax[kcut_max], RSDPower.rmax[rcut_min], RSDPower.rmin[rcut_max], RSDPower.n2, RSDPower.n)
+    
+    Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], local_error_P[kcut_min:kcut_max+1], ['P','Xi','C_tot'], local_error_P ,local_error_Xi,local_error_tot, title = title, pdfname = pdfname, ymax = 10**11, ymin = 10**(-5), xmax = 10**(3), xmin = 10**(-5), scale='log' )
+    Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], local_error_P[kcut_min:kcut_max+1], ['P','Xi','C_tot'], local_error_P, local_error_Xi, local_error_tot, title = title, pdfname = pdfname2, ymax = 10., ymin = 10**(-3), xmax = 10., xmin = 10**(-3), scale='log')
+    
+   
+    
+    
 
     """ fractional error for bandpower """
+    
+    from numpy.linalg import inv
     error_P_list = FractionalErrorBand( bandpower_base, C_matrix3PP_total)
     error_Xi_list = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower_Xi))
     error_Ctot_list = FractionalErrorBand( bandpower_base, inv(Fisher_bandpower))
@@ -495,6 +552,9 @@ def error():
     error_Ctot0 = error_Ctot_list[0:len(RSDPower.kcenter)]
     error_Cnf0 = error_Cnf_list[0:len(RSDPower.kcenter)]
     
+    
+    # error 2 and 4 modes
+    """
     error_P2 = error_P_list[len(RSDPower.kcenter):2*len(RSDPower.kcenter)]
     error_Xi2 = error_Xi_list[len(RSDPower.kcenter):2*len(RSDPower.kcenter)]
     error_Ctot2 = error_Ctot_list[len(RSDPower.kcenter):2*len(RSDPower.kcenter)]
@@ -504,9 +564,9 @@ def error():
     error_Xi4 = error_Xi_list[2*len(RSDPower.kcenter):3*len(RSDPower.kcenter)]
     error_Ctot4 = error_Ctot_list[2*len(RSDPower.kcenter):3*len(RSDPower.kcenter)]
     error_Cnf4 = error_Cnf_list[2*len(RSDPower.kcenter):3*len(RSDPower.kcenter)]
-    
+    """
 
-    
+
     # --------------------------------------------------------------
     """
     given_k = 5.0
@@ -544,6 +604,7 @@ def error():
     # magnified plot
     Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], error_P0[kcut_min:kcut_max+1], ['P','Xi','C_tot', 'C_nf'], error_P0, error_Xi0, error_Ctot0, error_Cnf0, title = title, pdfname = pdfname2, ymax = 10., ymin = 10**(-3), xmax = 10., xmin = 10**(-3), scale='log')
     
+    stop
     #mode 2 and 4 plotting
     """
     
@@ -562,7 +623,7 @@ def error():
     # magnified plot
     Linear_plot2( RSDPower.kcenter,  RSDPower.kcenter[kcut_min:kcut_max+1], error_P4[kcut_min:kcut_max+1], ['P','Xi','C_tot', 'C_nf'], error_P4, error_Xi4, error_Ctot4, error_Cnf4, title = title44, pdfname = pdfname44, ymax = 10., ymin = 10**(-3), xmax = 10., xmin = 10**(-3), scale='log')
     """
-    stop
+    
     #------------------------------------------------------------
     """ projection to b and f space"""
 
@@ -603,16 +664,18 @@ def error():
     Cov_C_nooff_d = inv(FisherC_nf_d)
     Cov_C_d = inv(FisherC_d)  
     
-    """
+    
+    
+    
     print '- - - - - - - - - - - - - - - - -'
     print '  Cov_PP :', np.sum(Cov_PP)
     print '  Cov_Xi :', np.sum(Cov_Xi)
     print '  Cov_tot:', np.sum(Cov_C)
     print '  Cov_nf :', np.sum(Cov_C_nooff)
     print '- - - - - - - - - - - - - - - - -'
-    print Cov_PP[0:2,0:2], Cov_Xi[0:2,0:2], Cov_C_nooff[0:2,0:2], Cov_C[0:2,0:2]
-    print '- - - - - - - - - - - - - - - - -'
-    """
+    #print Cov_PP[0:2,0:2], Cov_Xi[0:2,0:2], Cov_C_nooff[0:2,0:2], Cov_C[0:2,0:2]
+    #print '- - - - - - - - - - - - - - - - -'
+    
     
     makedirectory('plots/RSD/ellipse')
     # ellipse, all modes, marginalized
@@ -1062,11 +1125,7 @@ def Reid_step2_kcut(l):
     
     #matrices2P = [dPb0, dPb2, dPb4, dPf0, dPf2, dPf4, dPs0, dPs2, dPs4]
     
-    matrices2P = [RSDPower.dPb0[kcut_min:kcut_max+1], RSDPower.dPb2[kcut_min:kcut_max+1],\
-                  RSDPower.dPb4[kcut_min:kcut_max+1], RSDPower.dPf0[kcut_min:kcut_max+1],\
-                  RSDPower.dPf2[kcut_min:kcut_max+1], RSDPower.dPf4[kcut_min:kcut_max+1],\
-                  RSDPower.dPs0[kcut_min:kcut_max+1], RSDPower.dPs2[kcut_min:kcut_max+1],\
-                  RSDPower.dPs4[kcut_min:kcut_max+1]]
+    matrices2P = [RSDPower.dPb0[kcut_min:kcut_max+1], RSDPower.dPb2[kcut_min:kcut_max+1], RSDPower.dPb4[kcut_min:kcut_max+1], RSDPower.dPf0[kcut_min:kcut_max+1], RSDPower.dPf2[kcut_min:kcut_max+1], RSDPower.dPf4[kcut_min:kcut_max+1], RSDPower.dPs0[kcut_min:kcut_max+1], RSDPower.dPs2[kcut_min:kcut_max+1], RSDPower.dPs4[kcut_min:kcut_max+1]]
                   
     
     Xizeros = np.zeros((len(RSDPower.kcenter),len(RSDPower.rcenter)))
@@ -1129,8 +1188,7 @@ def Reid_step2_kcut(l):
     #print con_num
     
     rr = 1.15 * np.pi/RSDPower.kcenter[l]
-    return rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal\
-    ,error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2
+    return rr, error_b_determin, error_f_determin, error_b_marginal, error_f_marginal ,error_b_determin2, error_f_determin2, error_b_marginal2, error_f_marginal2
 
 def Reid_step2(l):
     
@@ -1285,12 +1343,83 @@ def error_ellipse_step1():
     labellist = ['$C_{P}$','$C_{Xi}$','$C_{nooff}$','$C_{total}$']
     confidence_ellipse(RSDPower.b, RSDPower.f, labellist, Cov_PP[0:2,0:2], Cov_Xi[0:2,0:2], Cov_C_nooff[0:2,0:2], Cov_C[0:2,0:2], title = title, pdfname = pdfname)
 
+def Cumulative_SNR_loop(l):
+    """ Fisher as a function of k_max (=l) """
+    
+    matricesXi = [RSDPower.covariance00, RSDPower.covariance02, RSDPower.covariance04, np.transpose(RSDPower.covariance02), RSDPower.covariance22, RSDPower.covariance24,np.transpose(RSDPower.covariance04), np.transpose(RSDPower.covariance24), RSDPower.covariance44]
+    
+    matricesPP = [RSDPower.covariance_PP00, RSDPower.covariance_PP02, RSDPower.covariance_PP04,RSDPower.covariance_PP02, RSDPower.covariance_PP22, RSDPower.covariance_PP24,RSDPower.covariance_PP04, RSDPower.covariance_PP24, RSDPower.covariance_PP44]
+    
+    
+    
+    """
+    Xizeros = np.zeros((len(RSDPower.kcenter),len(RSDPower.rcenter)))
+    matrices2Xi = [RSDPower.dxip0, Xizeros,Xizeros,Xizeros,RSDPower.dxip2,Xizeros,Xizeros,Xizeros,RSDPower.dxip4]
+                  
+    
+    C_matrix3 = CombineCovariance3(l, matricesXi)
+    #C_matrix2 = CombineCovariance2(l, matricesXi)
+    print np.shape(C_matrix3)
+    Xi, Xi2 = CombineDevXi3(l, matrices2Xi)
+    print np.shape(Xi)
+    
+    part_Fisher_bandpower_Xi = FisherProjection(Xi, C_matrix3)
+    #part_Fisher_bandpower_Xi_two = FisherProjection(Xi2, C_matrix2)
+    print np.shape(part_Fisher_bandpower_Xi)
+    data_Vec = RSDPower.multipole_bandpower[0:l+1]
+    SNR = np.dot( np.dot( data_Vec[0:l+1], part_Fisher_bandpower_Xi ), data_Vec[0:l+1])
+    
+    kk = 1.15 * np.pi / RSDPower.rcenter[l]
+    """
+    
+
+    Xizeros = np.zeros((len(RSDPower.kcenter),len(RSDPower.rcenter)))
+    matrices2Xi = [RSDPower.dxip0, Xizeros,Xizeros,Xizeros,RSDPower.dxip2,Xizeros,Xizeros,Xizeros,RSDPower.dxip4]
+    
+    """ F_bandpower from P """
+    part_Fisher_bandpower_PP = inv(CombineCovariance3(l, matricesPP))
+    
+    
+    """ GET full size C_Xi"""
+    l_r = len(RSDPower.rcenter)-1
+    C_matrix3 = CombineCovariance3(l_r, matricesXi)
+    #C_matrix2 = CombineCovariance2(l_r, matricesXi)
+    Xi, Xi2 = CombineDevXi3(l_r, matrices2Xi)
+    
+    
+    """ F_bandpower from Xi """
+    Fisher_bandpower_Xi = FisherProjection(Xi, C_matrix3)
+    #Fisher_bandpower_Xi_two = FisherProjection(Xi2, C_matrix2)
+    Cov_bandpower_Xi = inv(Fisher_bandpower_Xi)
+    cut = len(RSDPower.kcenter)
+    
+    part00 = Fisher_bandpower_Xi[0:cut, 0:cut]
+    part02 = Fisher_bandpower_Xi[0:cut, cut:2*cut]
+    part04 = Fisher_bandpower_Xi[0:cut, 2*cut:3*cut+1]
+    part22 = Fisher_bandpower_Xi[cut:2*cut, cut:2*cut]
+    part24 = Fisher_bandpower_Xi[cut:2*cut, 2*cut:3*cut+1]
+    part44 = Fisher_bandpower_Xi[2*cut:3*cut+1, 2*cut:3*cut+1]
+    
+    part_list = [ part00, part02, part04, np.transpose(part02), part22, part24, np.transpose(part04), np.transpose(part24), part44]
+    part_Fisher_bandpower_Xi = CombineCovariance3(l, part_list)
+    
+    data_Vec = np.array([RSDPower.multipole_bandpower0[0:l+1], RSDPower.multipole_bandpower2[0:l+1], RSDPower.multipole_bandpower4[0:l+1]]).reshape(1,3 * (l+1))
+    data_Vec0 = RSDPower.multipole_bandpower0[0:l+1]
+    #print np.shape(data_Vec), np.shape(part_Fisher_bandpower_Xi)
+    SNR_PP0 = np.dot( np.dot( data_Vec0, part_Fisher_bandpower_PP[0:cut, 0:cut][0:l+1,0:l+1] ), np.transpose(data_Vec0))
+    SNR_Xi0 = np.dot( np.dot( data_Vec0, part00[0:l+1,0:l+1] ), np.transpose(data_Vec0))
+    
+    SNR_PP = np.dot( np.dot( data_Vec, part_Fisher_bandpower_PP ), np.transpose(data_Vec))
+    SNR_Xi = np.dot( np.dot( data_Vec, part_Fisher_bandpower_Xi ), np.transpose(data_Vec))
+    
+    return RSDPower.kcenter[l], SNR_PP0, SNR_Xi0, SNR_PP, SNR_Xi
 
 
 Reid_step2_kcut = np.vectorize(Reid_step2_kcut)
 Reid_step2 = np.vectorize(Reid_step2)
 Reid_step1 = np.vectorize(Reid_step1)
 error_only_CP = np.vectorize(error_only_CP)
+Cumulative_SNR_loop = np.vectorize(Cumulative_SNR_loop)
 
 if __name__=='__main__':
     main()
