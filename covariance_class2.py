@@ -3,17 +3,18 @@ from numpy import zeros, sqrt, pi, sin, cos, exp
 from numpy.linalg import pinv, inv
 from numpy import vectorize
 from scipy.interpolate import interp1d
-from scipy.integrate import simps, quad
-
+from scipy.integrate import simps, simps
+#from sbess import sbess
+#sbess = np.vectorize(sbess)
 
 class error_analysis():
     
     """ No redshift, Not completed yet"""
 
-    def __init__(self, KMIN, KMAX, RMIN, RMAX, n, n2, subN):
+    def __init__(self, KMIN, KMAX, RMIN, RMAX, n, n2, subN, N_x):
         
         #parameter
-        self.h=1.0
+        self.h= 1.0
         self.Vs= 5.0*10**9 # survey volume
         self.nn= 3.0 * 10**(-4) # shot noise : \bar{n}
         
@@ -31,31 +32,62 @@ class error_analysis():
         #self.klist = np.logspace(np.log(self.KMIN),np.log(self.KMAX),self.n, base = np.e)
         
         
+        self.rlist = np.logspace(np.log(self.RMIN),np.log(self.RMAX),self.n2, base = np.e)
+        rlist = self.rlist
+        self.rmin = np.delete(rlist,-1)
+        self.rmax = np.delete(rlist,0)
+        
+        
+        """
+        # reverse order
         self.rlist = np.logspace(np.log(self.RMAX),np.log(self.RMIN),self.n2, base = np.e)
         rlist = self.rlist
         self.rmax = np.delete(rlist,-1)
         self.rmin = np.delete(rlist,0)
-        self.rcenter = np.array([ (rlist[i] + rlist[i+1])/2. for i in range(len(rlist)-1) ])
+        """
+        #self.rcenter = np.array([ (rlist[i] + rlist[i+1])/2. for i in range(len(rlist)-1) ])
+        self.rcenter = np.array([ np.sqrt(rlist[i] * rlist[i+1]) for i in range(len(rlist)-1) ])
+        self.dr = np.fabs(self.rmax - self.rmin)
+        self.dlnr = np.fabs(np.log(self.rcenter[2]/self.rcenter[3]))# np.log(self.rmax/self.rmin)[3]
         
-        self.dr = np.abs(self.rmax - self.rmin)
-        self.dlnr = np.log(self.rmax/self.rmin)[3]
    
    
-        self.skbin = np.logspace(np.log10(self.KMIN),np.log10(self.KMAX), subN * self.n + 1, base=10) #For Reid, delete '+1', not relevant anymore
-        self.skcenter = np.array([(self.skbin[i] + self.skbin[i+1])/2. for i in range(len(self.skbin)-1)])
+        self.skbin = np.logspace(np.log10(self.KMIN),np.log10(self.KMAX), subN * self.n + 1, base=10)
         self.skmin = np.delete(self.skbin,-1)
         self.skmax = np.delete(self.skbin,0)
-        self.sdlnk = np.log(self.skmax/self.skmin)
+        #self.skcenter = np.array([(self.skbin[i] + self.skbin[i+1])/2. for i in range(len(self.skbin)-1)])
+        self.skcenter = np.array([(np.sqrt(self.skbin[i] * self.skbin[i+1])) for i in range(len(self.skbin)-1)])
+        self.sdlnk = np.log(self.skcenter[3]/self.skcenter[2]) #np.log(self.skmax/self.skmin)
         
+        self.sdk = self.skmax - self.skmin
         self.klist = np.array([self.skbin[i*subN] for i in range(len(self.skbin)/subN + 1)]) #For Reid, delete '+1', not relevant anymore
         
-        
-        self.kcenter = np.array([(self.klist[i] + self.klist[i+1])/2. for i in range(len(self.klist)-1)])
+        #self.kcenter = np.array([(self.klist[i] + self.klist[i+1])/2. for i in range(len(self.klist)-1)])
+        self.kcenter = np.array([self.skcenter[i*subN + subN/2] for i in range(len(self.skcenter)/subN)])
         self.kmin = np.delete(self.klist,-1)
         self.kmax = np.delete(self.klist,0)
         self.dk = self.kmax - self.kmin
-        self.dlnk = np.log(self.kmax/self.kmin)[3]
+        self.dlnk = np.log(self.kcenter[3]/self.kcenter[2]) #np.log(self.kmax/self.kmin)[3]
 
+        # k bin for covP integral ---------
+
+
+        # k bin for xi integral ----------
+        self.N_x = N_x #2**18 + 1
+        self.kbin_x = np.logspace(np.log10(self.KMIN),np.log10(self.KMAX), self.N_x + 1, base=10) # for romb int, +2
+        self.kcenter_x = np.array([(np.sqrt(self.kbin_x[i] * self.kbin_x[i+1])) for i in range(len(self.kbin_x)-1)])
+        self.kmin_x = np.delete(self.kbin_x,-1)
+        self.kmax_x = np.delete(self.kbin_x,0)
+        self.dk_x = self.kmax_x - self.kmin_x
+        self.dlnk_x = np.log(self.kcenter_x[3]/self.kcenter_x[2]) #np.log(self.kmax_x/self.kmin_x)
+    
+
+        InitiateTitle = '-------------------------------------------------------------------\
+        \nclass error_analysis, no RSD \
+        \nz = 0.0, kN ={}, subN = {}, rN = {}, N_x = {} \
+        \ndlnr = {}, dlnk={}, sdlnk={}'.format(self.n, self.subN, self.n2, self.N_x, self.dlnr, self.dlnk, self.sdlnk )
+    
+        #print InitiateTitle
 
 
     def compile_fortran_modules(self):
@@ -86,6 +118,7 @@ class error_analysis():
         
         #REAL POWERSPECTRUM DATA
         self.RealPowerBand = np.array([Pm(self.skcenter[i]) for i in range(len(self.skcenter))])
+        self.RealPowerBand_x = np.array([Pm(self.kcenter_x[i]) for i in range(len(self.kcenter_x))])
 
 
     def Shell_avg_band( self ):
@@ -98,8 +131,11 @@ class error_analysis():
         skcenter = self.skcenter
         kcenter = self.kcenter
         dk = self.dk
+        kmax = self.kmax
+        kmin = self.kmin
         
-        Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        #Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        Vi = 4./3 * pi * (kmax**3 - kmin**3)
         
         resultlist=[]
         for i in range(len(kcenter)):
@@ -119,12 +155,16 @@ class error_analysis():
         """ note: survey volume definition """
         kcenter, dlnk, Vs, nn = self.kcenter, self.dlnk, self.Vs, self.nn
         dk = self.dk
+        kmax = self.kmax
+        kmin = self.kmin
+        
         Shell_avg_bandpower = self.Shell_avg_band()
         
         V = 4./3 * np.pi * self.RMAX**3
         PowerCovariance = np.zeros((len(kcenter),len(kcenter)))
-        Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
-        PowerCov = 2./V * (Shell_avg_bandpower + 1./nn)**2 /Vi * (2 * pi)**3
+        #Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        Vi = 4./3 * pi * (kmax**3 - kmin**3)
+        PowerCov = 2./Vs * (Shell_avg_bandpower + 1./nn)**2 /Vi * (2 * pi)**3
         #PowerCov = (Shell_avg_bandpower + 1./nn)**2 / Vi
         for i in range(len(kcenter)):
             PowerCovariance[i,i] = PowerCov[i]
@@ -134,13 +174,151 @@ class error_analysis():
 
 
 
+    def Shell_avg_derivative_matrix( self ):
+        #
+        #
+        #
+        from sici import sici
+        sici = np.vectorize(sici)
+        from numpy import pi, sin, cos
+        from scipy.integrate import simps
+        
+        kcenter, rcenter, kmax, kmin, rmax, rmin, dr, dlnr = \
+        self.kcenter, self.rcenter, self.kmax, self.kmin, self.rmax, self.rmin, self.dr, self.dlnr
+        skbin = self.skbin
+        
+        matrix1,matrix2 = np.mgrid[0:len(kcenter),0:len(rcenter)]
+        klistmatrix = kcenter[matrix1] # k matrix (downward component changing, axis = 0)
+        kminmatrix = kmin[matrix1]
+        kmaxmatrix = kmax[matrix1]
+        rbinmatrix = rcenter[matrix2]
+        rminmatrix = rmin[matrix2]
+        rmaxmatrix = rmax[matrix2]
+
+        Vi = 4 * pi * rbinmatrix**2 * dr * (1 + (dr/rbinmatrix)**2/12.)
+        
+        self.shell_avg_derivative = 2./Vi / pi * \
+            (- sin(kmaxmatrix * rmaxmatrix) + sin(kminmatrix * rmaxmatrix ) +\
+             sin(kmaxmatrix * rminmatrix) - sin(kminmatrix * rminmatrix) +\
+             sici(kmaxmatrix * rmaxmatrix) - sici(kminmatrix * rmaxmatrix) -\
+             sici(kmaxmatrix * rminmatrix) + sici(kminmatrix * rminmatrix))
+        
+        
+        return self.shell_avg_derivative
+
+
+    def Shell_avg_CovarianceMatrix( self ):
+        #
+        #   C(r,r')
+        #   sph_bessel j_0 averaged in shell
+        #   numerical integration
+        #
+        from scipy.integrate import quad, simps
+        from numpy import sin, cos
+        rcenter, dr, Vs, nn = self.rcenter, self.dr, self.Vs, self.nn
+        rmin, rmax = self.rmin, self.rmax
+        skbin = self.skbin
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        Bandpower = self.Pmlist
+        subN = self.subN
+        
+        matrix1, matrix2, matrix3 = np.mgrid[0:len(kcenter),0:len(rcenter),0:len(rcenter)]
+        matrix4, matrix5, matrix6 = np.mgrid[0:subN,0:len(rcenter),0:len(rcenter)]
+        R1 = rcenter[matrix2] # vertical
+        R2 = rcenter[matrix3] # horizontal
+        k = kcenter[matrix1]
+        drmatrix1 = dr[matrix2]
+        drmatrix2 = dr[matrix3]
+        Bandpower = Bandpower[matrix1]
+        
+        
+        Vi1 = 4 * pi * R1**2 * drmatrix1 * (1. + 1./12 * (drmatrix1/R1)**2)
+        Vi2 = 4 * pi * R2**2 * drmatrix2 * (1. + 1./12 * (drmatrix2/R2)**2)
+        Vi = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2)
+        
+        
+        #Bessel_integral = np.zeros((len(kcenter), len(rcenter), len(rcenter)))
+        Bessel_integral = []
+        for i in range(len(kcenter)):
+            sk = skcenter[i*self.subN:i*self.subN+self.subN]
+            #matrix1, matrix2, matrix3 = np.mgrid[0:len(sk),0:len(rcenter),0:len(rcenter)]
+            sk = sk[matrix4]
+            r1 = rcenter[matrix5] # vertical
+            r2 = rcenter[matrix6] # horizontal
+            
+            Bessel0matrix1 = 4 * pi /(sk**3) \
+        * (-dr * sk * cos(sk * dr/2.) * cos(sk*r1) + 2 * sin( sk*dr/2. )*( cos(sk*r1) + sk*r1*sin(sk*r1)))
+            Bessel0matrix2 = 4 * pi /(sk**3) \
+        * (-dr * sk * cos(sk * dr/2.) * cos(sk*r2) + 2 * sin( sk*dr/2. )*( cos(sk*r2) + sk*r2*sin(sk*r2)))
+            
+            result = simps(sk**3 /(2 * pi**2) * Bessel0matrix1 * Bessel0matrix2, dx = self.sdlnk, axis = 0)
+            Bessel_integral.append(result)
+        
+        Bessel_integral = np.reshape(Bessel_integral,(len(kcenter), len(rcenter), len(rcenter)))/Vi1/Vi2
+        
+        FirstTerm = 2./Vs * np.sum((Bandpower**2 + Bandpower * 2./nn) * Bessel_integral, axis=0)
+        
+        SecondTerm_diagonal = 2./Vs/Vi * 1./nn**2
+        SecondTerm = np.zeros((len(rcenter),len(rcenter)))
+        np.fill_diagonal(SecondTerm,SecondTerm_diagonal)
+        self.Shell_avg_cov = FirstTerm + SecondTerm
+        
+        for i in range(len(self.rcenter)):
+            for j in np.arange(i, len(self.rcenter)):
+                
+                self.Shell_avg_cov[j,i] = self.Shell_avg_cov[i,j]
+        
+        return self.Shell_avg_cov
+
+
+    def CrossCovariancePXi( self ):
+        #
+        #   C(k,r) = C(k,k') * dXi/dP
+        #
+        from scipy.integrate import simps
+        from sici import sici
+        sici = np.vectorize(sici)
+        
+        rcenter, dr, Vs, nn = self.rcenter, self.dr, self.Vs, self.nn
+        rmin, rmax = self.rmin, self.rmax
+        kmin, kmax = self.kmin, self.kmax
+        skbin = self.skbin
+        kcenter, dk = self.kcenter, self.dk
+        skcenter = self.skcenter
+        Bandpower = self.Pmlist
+        
+        matrix1, matrix2 = np.mgrid[0:len(kcenter),0:len(rcenter)]
+        rbinmatrix = rcenter[matrix2] # vertical
+        kbinmatrix = kcenter[matrix1]
+        Bandpower = Bandpower[matrix1]
+        rmaxmatrix = rmax[matrix2]
+        rminmatrix = rmin[matrix2]
+        kmaxmatrix = kmax[matrix1]
+        kminmatrix = kmin[matrix1]
+        dk = dk[matrix1]
+        
+        #Vir = 4 * pi * rbinmatrix**2 * dr * (1 + (dr/rbinmatrix)**2/12.)
+        Vik = 4 * pi * kbinmatrix**2 * dk * (1 + (dk/kbinmatrix)**2/12.)
+        """
+            avgBesselmatrix = 16 * pi**2 /Vir/Vik * \
+            (- sin(kmaxmatrix * rmaxmatrix) + sin(kminmatrix * rmaxmatrix ) +\
+            sin(kmaxmatrix * rminmatrix) - sin(kminmatrix * rminmatrix) +\
+            sici(kmaxmatrix * rmaxmatrix)[0] - sici(kminmatrix * rmaxmatrix)[0] -\
+            sici(kmaxmatrix * rminmatrix)[0] + sici(kminmatrix * rminmatrix)[0])
+            """
+        #self.CrossCovariance = 2/Vs * (Bandpower + nn)**2 * avgBesselmatrix
+        self.CrossCovariance = 2./Vs * (Bandpower + 1./self.nn)**2 * self.shell_avg_derivative /Vik
+        return self.CrossCovariance
+
+
 
 
 
 class RSD_covariance(error_analysis):
 
-    def __init__(self, KMIN, KMAX, RMIN, RMAX, n, n2, subN):
-        error_analysis.__init__(self, KMIN, KMAX, RMIN, RMAX, n, n2, subN)
+    def __init__(self, KMIN, KMAX, RMIN, RMAX, n, n2, subN, N_x):
+        error_analysis.__init__(self, KMIN, KMAX, RMIN, RMAX, n, n2, subN, N_x)
         
         # RSD parameter
 
@@ -148,16 +326,16 @@ class RSD_covariance(error_analysis):
         self.f=0.74
         self.s= 3.5  # sigma in Power spectrum
 
-        self.n3 = 31 # 101 for Reid number of mu bins
+        self.n3 = 2**6 + 1 # 101 for Reid number of mu bins
         self.mulist = np.linspace(-1.,1.,self.n3)
+        self.dmu = self.mulist[3]-self.mulist[2]
         
-        
-        print '\n-------------------------------------------------------------------\
-        \n < RSD : Fractional Error for parameter b, f > \
-        \nz = 0.0\
-        \nnumber of k bins n ={}, subN = {}\
-        \nnumber of r bins n2 = {} \
-        \ndlnr = {}, dlnk={}, sdlnk={}'.format(self.n, self.subN, self.n2, np.log(self.rlist[1]/self.rlist[2]),self.dlnk, self.sdlnk[2] )
+        InitiateTitle = '-------------------------------------------------------------------\
+        \nclass RSD_covariance \
+        \nz = 0.55, kN ={}, subN = {}, rN = {}, N_x = {} \
+        \ndlnr = {}, dlnk={}, sdlnk={} \ndr = ({},{}), \
+        dk = ({},{})'.format(self.n, self.subN, self.n2, self.N_x, self.dlnr ,self.dlnk, self.sdlnk, self.dr[0], self.dr[-1], self.dk[0], self.dk[-1] )
+        print InitiateTitle
 
 
 
@@ -212,7 +390,8 @@ class RSD_covariance(error_analysis):
         mumatrix = self.mulist[matrix1]
         Le_matrix = Ll(l,mumatrix)
 
-        Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        #Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        Vi = 4./3 * pi * (self.kmax**3 - self.kmin**3)
                 
         resultlist=[]
         for i in range(len(kcenter)):
@@ -257,7 +436,8 @@ class RSD_covariance(error_analysis):
         mumatrix = self.mulist[matrix1]
         Le_matrix = Ll(l,mumatrix)
         
-        Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        #Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        Vi = 4./3 * pi * (self.kmax**3 - self.kmin**3)
         
         resultlistb=[]
         resultlistf=[]
@@ -290,7 +470,7 @@ class RSD_covariance(error_analysis):
         self.dPb0, self.dPf0, self.dPs0 = self.RSDband_derivative_P(0.0)
         self.dPb2, self.dPf2, self.dPs2 = self.RSDband_derivative_P(2.0)
         self.dPb4, self.dPf4, self.dPs4 = self.RSDband_derivative_P(4.0)
-        print "RSDband_derivative_P_All (dP/db, dP/df, dP/ds)"
+        #print "RSDband_derivative_P_All (dP/db, dP/df, dP/ds)"
 
 
 
@@ -475,13 +655,18 @@ class RSD_covariance(error_analysis):
         #   Shell averaged
         #   dxi_l / dp_li = i^l int(k^2 ShellavgBessel(kr) / 2pi^2, kmin, kmax)
         #
+        import numpy as np
+        from numpy import pi
+        from scipy.integrate import simps, romb
         import cmath
         I = cmath.sqrt(-1)
 
         klist = self.klist
         kcenter = self.kcenter
+        skcenter = self.skcenter
         skbin = self.skbin
         dk = self.dk
+        sdlnk = self.sdlnk
         mulist = self.mulist
         dlnk = self.dlnk
         rcenter = self.rcenter
@@ -489,39 +674,60 @@ class RSD_covariance(error_analysis):
         rmax = self.rmax
         dr = self.dr
         
-        matrix1, matrix2 = np.mgrid[ 0:len(mulist), 0: self.subN ]
-        matrix3, matrix4 = np.mgrid[ 0:len(rcenter), 0: self.subN ]
-        mumatrix = self.mulist[matrix1]
-        rminmatrix = rmin[matrix3]
-        rmaxmatrix = rmax[matrix3]
-        Le_matrix = Ll(l,mumatrix)
-        rmatrix = rcenter[matrix3]
-        drmatrix = dr[matrix3]
+        matrix1, matrix2 = np.mgrid[ 0:len(kcenter), 0: len(rcenter) ]
+        matrix3, matrix4 = np.mgrid[0: self.subN, 0:len(rcenter)]
+        
+        rminmatrix = rmin[matrix4]
+        rmaxmatrix = rmax[matrix4]
+        rmatrix = rcenter[matrix4]
 
-        Vir = 4 * pi * rmatrix**2 * drmatrix + 1./3 * pi * (drmatrix)**3
+        #Vir = 4 * pi * rcenter**2 * dr + 1./3 * pi * dr**3
+        Vir = 4./3 * pi * np.fabs(rmax**3 - rmin**3)
         
         resultlist=[]
         for i in range(len(kcenter)):
-            k = skbin[i*self.subN : i*self.subN+self.subN]
-            kmatrix = k[matrix2]
-            Dmatrix = np.exp( - kmatrix**2 * mumatrix**2 * self.s**2) #FOG matrix
-            kmatrix2 = k[matrix4]
-            AvgBesselmatrix = avgBessel(l, kmatrix2 ,rminmatrix,rmaxmatrix)/Vir
-            
-            result = np.real(I**l) * simps( kmatrix2**2 * AvgBesselmatrix /(2*pi**2) , k, axis = 1 )
+            k = self.skcenter[i*self.subN : i*self.subN + self.subN ]
+            kmatrix2 = k[matrix3]
+            avgBesselmatrix = avgBessel(l, kmatrix2 ,rminmatrix,rmaxmatrix)
+            result = np.real(I**l) * romb( kmatrix2**3/(2*pi**2) * avgBesselmatrix  , dx = sdlnk , axis = 0 )/Vir
             resultlist.append(result)
         
-        derivative_Xi_bandpower = np.array(resultlist).reshape((len(kcenter),len(rcenter)))
+        derivative_Xi_bandpower = np.array(resultlist)
         return derivative_Xi_bandpower
             
             
     def derivative_Xi_band_All(self):
     
+        import pp, sys, time
+        
+        ppservers = ()
+        
+        if len(sys.argv) > 1:
+            ncpus = int(sys.argv[1])
+            # Creates jobserver with ncpus workers
+            job_server = pp.Server(ncpus, ppservers=ppservers)
+        else:
+            # Creates jobserver with automatically detected number of workers
+            job_server = pp.Server(ppservers=ppservers)
+        #print "Starting pp with", job_server.get_ncpus(), "workers"
+        
+        inputs1 = ((0.0,),(2.0,),(4.0,))
+        jobs1 = [ job_server.submit(self.derivative_Xi_band, input, (avgBessel,)) for input in inputs1]
+        result1=[]
+        for job in jobs1:
+            re = job()
+            result1.append(re)
+
+        self.dxip0 = result1[0]
+        self.dxip2 = result1[1]
+        self.dxip4 = result1[2]
+        
+        """
         self.dxip0 = self.derivative_Xi_band( 0.0 )
         self.dxip2 = self.derivative_Xi_band( 2.0 )
         self.dxip4 = self.derivative_Xi_band( 4.0 )
-    
-        print "derivative_Xi_band_All (dxi/dp)"
+        """
+        #print "derivative_Xi_band_All (dxi/dp)"
     
 
 
@@ -534,7 +740,7 @@ class RSD_covariance(error_analysis):
 
         klist = self.klist
         kcenter = self.kcenter
-
+        skcenter = self.skcenter
         skbin = self.skbin
         mulist = self.mulist
         dk = self.dk
@@ -548,7 +754,8 @@ class RSD_covariance(error_analysis):
         nn = self.nn
 
 
-        Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        #Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        Vi = 4./3 * pi * (self.kmax**3 - self.kmin**3 )
         
         # FirstTerm + SecondTerm
         matrix1, matrix2 = np.mgrid[0:len(mulist),0:len(kcenter)]
@@ -578,10 +785,7 @@ class RSD_covariance(error_analysis):
             
 
     def RSDband_covariance_PP(self, l1, l2):
-        #
-        #
-        #
-        #
+        
         from scipy.integrate import quad,simps
         from numpy import zeros, sqrt, pi, exp
         import cmath
@@ -589,45 +793,46 @@ class RSD_covariance(error_analysis):
     
         klist = self.klist
         kcenter = self.kcenter
-        skbin = self.skbin
+        skcenter = self.skcenter
         mulist = self.mulist
         dk = self.dk
         dlnk = self.dlnk
-        Pmlist = 1 #self.Pmlist
+        sdlnk = self.sdlnk
         matterpower = self.RealPowerBand
         s = self.s
         b = self.b
         f = self.f
         Vs = self.Vs
         nn = self.nn
-    
+        dmu = self.dmu
+        
         # FirstTerm + SecondTerm
         matrix1, matrix2 = np.mgrid[0:len(mulist),0:self.subN]
         mumatrix = self.mulist[matrix1]
         
         Le_matrix1 = Ll(l1,mumatrix)
         Le_matrix2 = Ll(l2,mumatrix)
-        Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        #Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        Vi = 4./3 * pi * ( self.kmax**3 - self.kmin**3 )
         
         Const_alpha = (2*l1 + 1.) * (2*l2 + 1.) * (2*pi)**3 /Vs
        
         resultlist1 = []
         resultlist2 = []
         for i in range(len(kcenter)):
-            k = skbin[i*self.subN : i*self.subN+self.subN]
+            k = skcenter[i*self.subN : i*self.subN+self.subN]
             Pm = matterpower[i*self.subN : i*self.subN+self.subN]
             kmatrix = k[matrix2]
-            #Pmmatrix = Pm[matrix2]
             Dmatrix = np.exp(- kmatrix**2 * mumatrix**2 * self.s**2) #FOG matrix
             R = (self.b + self.f * mumatrix**2)**2 * Dmatrix
-            Rintegral3 =  simps(  R**2 * Le_matrix1 * Le_matrix2, mumatrix, axis=0 )
-            Rintegral2 =  simps(  R * Le_matrix1 * Le_matrix2, mumatrix, axis=0 )
-            result1 = simps( 4 * pi * k**2 * Pm**2 * Rintegral3, k )
-            result2 = simps( 4 * pi * k**2 * Pm * Rintegral2, k )
+            Rintegral3 =  simps(  R**2 * Le_matrix1 * Le_matrix2, dx = dmu, axis=0 )
+            Rintegral2 =  simps(  R * Le_matrix1 * Le_matrix2, dx = dmu, axis=0 )
+            result1 = simps( 4 * pi * k**3 * Pm**2 * Rintegral3, dx = sdlnk )
+            result2 = simps( 4 * pi * k**3 * Pm * Rintegral2, dx = sdlnk )
             resultlist1.append(result1)
             resultlist2.append(result2)
-        FirstTerm = Const_alpha * Pmlist**2 * np.array(resultlist1)/Vi**2
-        SecondTerm = Const_alpha * Pmlist* 2./nn * np.array(resultlist2)/Vi**2
+        FirstTerm = Const_alpha * np.array(resultlist1)/Vi**2
+        SecondTerm = Const_alpha * 2./nn * np.array(resultlist2)/Vi**2
         
         # LastTerm
         
@@ -645,7 +850,7 @@ class RSD_covariance(error_analysis):
   
   
     def RSDband_covariance_PP_All(self):
-    
+        
         self.covariance_PP00 = np.array(self.RSDband_covariance_PP(0.0,0.0))
         self.covariance_PP02 = np.array(self.RSDband_covariance_PP(0.0,2.0))
         self.covariance_PP04 = np.array(self.RSDband_covariance_PP(0.0,4.0))
@@ -653,7 +858,7 @@ class RSD_covariance(error_analysis):
         self.covariance_PP24 = np.array(self.RSDband_covariance_PP(2.0,4.0))
         self.covariance_PP44 = np.array(self.RSDband_covariance_PP(4.0,4.0))
   
-        print 'covariance_PP_All is finished (l = 0,2,4)'
+        #print 'covariance_PP_All is finished (l = 0,2,4)'
     
   
     def RSDband_covariance_PXi( self, l1, l2 ):
@@ -663,8 +868,7 @@ class RSD_covariance(error_analysis):
         from numpy import zeros, sqrt, pi, sin, cos, exp
         from numpy.linalg import inv
         from numpy import vectorize
-        from scipy.interpolate import interp1d
-        from scipy.integrate import simps, quad
+        from scipy.integrate import simps, simps
         
         import cmath
         I = cmath.sqrt(-1)
@@ -673,6 +877,7 @@ class RSD_covariance(error_analysis):
         kcenter = self.kcenter
         skbin = self.skbin
         skcenter =self.skcenter
+        sdlnk = self.sdlnk
         rlist = self.rlist
         rcenter = self.rcenter
         dr = self.dr
@@ -689,6 +894,7 @@ class RSD_covariance(error_analysis):
         f = self.f
         Vs = self.Vs
         nn = self.nn
+        dmu = self.dmu
     
         # FirstTerm + SecondTerm
         matrix1, matrix2, matrix3 = np.mgrid[0:len(mulist),0:self.subN, 0: len(rcenter)]
@@ -698,8 +904,6 @@ class RSD_covariance(error_analysis):
         rmaxmatrix = rmax[matrix5]
         rmatrix = rcenter[matrix5]
         drmatrix = dr[matrix5]
-    
-    
     
         Le_matrix1 = Ll(l1,mumatrix)
         Le_matrix2 = Ll(l2,mumatrix)
@@ -715,27 +919,28 @@ class RSD_covariance(error_analysis):
             Dmatrix = np.exp(- kmatrix**2 * mumatrix**2 * self.s**2) #FOG matrix
                 
             R = (self.b + self.f * mumatrix**2)**2 * Dmatrix
-            Rintegral3 = simps( R**2 * Le_matrix1 * Le_matrix2, mumatrix, axis= 0 )
-            Rintegral2 = simps( R * Le_matrix1 * Le_matrix2, mumatrix, axis= 0 )
+            Rintegral3 = simps( R**2 * Le_matrix1 * Le_matrix2, dx = dmu, axis= 0 )
+            Rintegral2 = simps( R * Le_matrix1 * Le_matrix2, dx = dmu, axis= 0 )
             
             kmatrix2 = k[matrix4] # 2D
-            Pmmatrix = 1 #Pm[matrix4]
+            Pmmatrix = Pm[matrix4]
             Vir = 4 * pi * rmatrix**2 * drmatrix + 1./3 * pi * (drmatrix)**3
             AvgBesselmatrix = avgBessel(l2,kmatrix2,rminmatrix,rmaxmatrix)/Vir #2D
-            result1 = simps( 4 * pi * kmatrix2**2 * Pmmatrix**2 * Rintegral3 * AvgBesselmatrix, k, axis=0 )
-            result2 = simps( 4 * pi * kmatrix2**2 * 2./nn * Pmmatrix * Rintegral2 * AvgBesselmatrix, k, axis=0 )
-            result3 = simps( 4 * pi * kmatrix2**2 * AvgBesselmatrix, k, axis=0 )
+            result1 = simps( 4 * pi * kmatrix2**3 * Pmmatrix**2 * Rintegral3 * AvgBesselmatrix, dx = sdlnk, axis=0 )
+            result2 = simps( 4 * pi * kmatrix2**3 * 2./nn * Pmmatrix * Rintegral2 * AvgBesselmatrix, dx = sdlnk, axis=0 )
+            result3 = simps( 4 * pi * kmatrix2**3 * AvgBesselmatrix, dx = sdlnk, axis=0 )
             
             resultlist1.append(result1)
             resultlist2.append(result2)
             resultlist3.append(result3)
     
         matrix1, matrix2 = np.mgrid[0:len(kcenter), 0: len(rcenter)]
-        Pmlistmatrix = Pmlist[matrix1]
+        Pmlistmatrix = 1 #Pmlist[matrix1]
         kmatrix = kcenter[matrix1]
         dkmatrix = dk[matrix1]
-        Vi = 4 * pi * kmatrix**2 * dkmatrix + 1./3 * pi * (dkmatrix)**3
-                
+        #Vi = 4 * pi * kmatrix**2 * dkmatrix + 1./3 * pi * (dkmatrix)**3
+        Vi = 4./3 * pi * (self.kmax[matrix1]**3 - self.kmin[matrix1]**3 )
+        
         FirstTerm = Const_beta * Pmlistmatrix**2 * np.array(resultlist1).reshape((len(kcenter), len(rcenter)))/Vi
         SecondTerm = Const_beta * Pmlistmatrix * np.array(resultlist2).reshape((len(kcenter), len(rcenter)))/Vi
         
@@ -745,7 +950,7 @@ class RSD_covariance(error_analysis):
         
         covariance_multipole_PXi =  FirstTerm + SecondTerm + LastTerm
     
-        print 'covariance_PXi {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
+        #print 'covariance_PXi {:>1.0f}{:>1.0f} is finished'.format(l1,l2)
         return covariance_multipole_PXi
 
 
@@ -780,7 +985,7 @@ class RSD_covariance(error_analysis):
         else:
             # Creates jobserver with automatically detected number of workers
             job_server = pp.Server(ppservers=ppservers)
-        print "\nStarting pp with", job_server.get_ncpus(), "workers"
+        print "Starting pp with", job_server.get_ncpus(), "workers"
     
         inputs1 = ((0.0, 0.0,),(0.0, 2.0,),(0.0, 4.0,),(2.0, 0.0,),(2.0, 2.0,),(2.0, 4.0,),(4.0, 0.0,),(4.0, 2.0,),(4.0, 4.0,))
         jobs1 = [ job_server.submit(self.RSDband_covariance_PXi, input, (Ll,avgBessel,)) for input in inputs1]
@@ -855,6 +1060,7 @@ class RSD_covariance(error_analysis):
         Pmmatrix = matterpower[matrix4]
         
         Vir = 4 * pi * rmatrix**2 * drmatrix + 1./3 * pi * (drmatrix)**3
+        Vir = 4./3 * pi * np.fabs(self.rmax[matrix5]**3 - self.rmin[matrix5]**3)
         
         #AvgBesselmatrix = avgBessel(l,kmatrix2,rminmatrix,rmaxmatrix)/Vir #2D
         
@@ -895,7 +1101,7 @@ class RSD_covariance(error_analysis):
         self.dxib2, self.dxif2, self.dxis2 = self.derivative_xi(2.0)
         self.dxib4, self.dxif4, self.dxis4 = self.derivative_xi(4.0)
         """
-        print 'derivative_Xi_All (dxib, dxif, dxif)'
+        #print 'derivative_Xi_All (dxib, dxif, dxif)'
 
 
     
@@ -1209,11 +1415,10 @@ class RSD_covariance(error_analysis):
         #
         
         constant = (2./Vs) * (2*l1+1)*(2*l2+1)/(2*np.pi)**2 * np.real(I**(l1+l2))
-        Total_Power = constant * klistmatrix**2 *(PP_matrix**2 + 2./nn * PP_matrix)* Double_Le_matrix
+        Total_Power = constant * klistmatrix**3 *(PP_matrix**2 + 2./nn * PP_matrix) * Double_Le_matrix
         # integrate along mu axis by using scipy.integrate.simpson
         integ = simps(Total_Power,mulistmatrix, axis=0) #result, 1d array for k
-        
-        
+
         # Double Spherical Bessel ftn including r1 r2 ========================
         #
         #   jl(kr)jl'(kr)
@@ -1230,16 +1435,16 @@ class RSD_covariance(error_analysis):
         matrix1,matrix2,matrix3 = np.mgrid[0:len(kcenter),0:len(rcenter),0:len(rcenter)]
         rlistmatrix1 = rcenter[matrix2] # vertical
         rlistmatrix2 = rcenter[matrix3] # horizontal
-        dlnk = np.log(klist)
+        #dlnk = np.log(klist)
         klistmatrix = kcenter[matrix1] # axis 0 #redefine to match with r dimension
-        dlnkmatrix = dlnk[matrix1]
+        #dlnkmatrix = dlnk * np.ones(len(kcenter))[matrix1]
         integ = integ[matrix1] # convert 1d array to 3 d array for next calculation (same axis with kmatrix)
         # Casting 3 dimensional array into double bessel function
         
-        Total = integ * doublebessel(klistmatrix,l1,l2,rlistmatrix1,rlistmatrix2) # 3 dim array
+        Total = integ * doublebessel(klistmatrix,l1,l2,rlistmatrix1,rlistmatrix2)# 3 dim array
         
         # integrate along k axis
-        Total_Integ = simps(Total,klistmatrix, axis=0)
+        Total_Integ = simps(Total,dx = dlnk, axis=0)
         # output : 2 dimensional matrices for r1, r2.
         # k axis is compactified by simpson integration
         
@@ -1384,25 +1589,26 @@ class RSD_covariance(error_analysis):
     
            C_ll' = <X_l(ri)X_l'(rj)> """
 
-        from scipy.integrate import simps
+        from scipy.integrate import simps, romb
         from numpy import zeros, sqrt, pi, exp
         import cmath
         I = cmath.sqrt(-1)
     
         klist = self.klist
-        kcenter = self.kcenter
-        skcenter = self.skcenter
+        kcenter = self.kcenter_x
+        skcenter = self.kcenter_x
         rlist = self.rlist
         rcenter = self.rcenter
         dr = self.dr
         rmin = self.rmin
         rmax = self.rmax
         mulist = self.mulist
-        dk = self.dk
-        dlnk = self.dlnk
+        dk = self.dk_x
+        dlnk = self.dlnk_x
+        sdlnk = self.dlnk_x
         dr = self.dr
         Pmlist = self.Pmlist
-        Pm = self.RealPowerBand
+        Pm = self.RealPowerBand_x
         s = self.s
         b = self.b
         f = self.f
@@ -1418,12 +1624,12 @@ class RSD_covariance(error_analysis):
         Le_matrix2 = Ll(2.0,mulistmatrix)
         Le_matrix4 = Ll(4.0,mulistmatrix)
     
-        Dmatrix = np.exp(- klistmatrix**2 * mulistmatrix**2 * self.s**2)
+        Dmatrix = np.exp(-klistmatrix**2 * mulistmatrix**2 * self.s**2)
         R = (b + f * mulistmatrix**2)**2 * Dmatrix
 
         from multiprocessing import Process, Queue
         
-        print 'Rintegral'
+        """print 'Rintegral' """
         def Rintegral(q, order, (l1, l2, Le1, Le2)):
             
             #import covariance_class2
@@ -1433,9 +1639,9 @@ class RSD_covariance(error_analysis):
             
             I = cmath.sqrt(-1)
             const_gamma = real(I**(l1+l2)) * 2.* (2*l1+1)*(2*l2+1) /(2*pi)**2 /self.Vs
-            Rintegral3 = simps(R**2 * Le1 * Le2, self.mulist, axis=0 )
-            Rintegral2 = simps(R * Le1 * Le2, self.mulist, axis=0 )
-            result = const_gamma * skcenter**2 * (Rintegral3 * Pm**2 + Rintegral2 * Pm * 2./self.nn)
+            Rintegral3 = romb(R**2 * Le1 * Le2, dx = self.dmu, axis=0 )
+            Rintegral2 = romb(R * Le1 * Le2, dx = self.dmu, axis=0 )
+            result = const_gamma * skcenter**3 * (Rintegral3 * Pm**2 + Rintegral2 * Pm * 2./self.nn)
             
             q.put((order,result))
         
@@ -1471,18 +1677,23 @@ class RSD_covariance(error_analysis):
         rmaxmatrix = rmax[matrix4] # vertical
         rmaxmatrix2 = rmax[matrix5] # horizontal
     
-        Vir1 = 4 * pi * rlistmatrix1**2 * dr1 * (1. + 1./12 * (dr1/rlistmatrix1)**2)
-        Vir2 = 4 * pi * rlistmatrix2**2 * dr2 * (1. + 1./12 * (dr2/rlistmatrix2)**2)
-        Vi = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2) #1d array
+    
+        #Vir1 = 4 * pi * rlistmatrix1**2 * dr1 * (1. + 1./12 * (dr1/rlistmatrix1)**2)
+        #Vir2 = 4 * pi * rlistmatrix2**2 * dr2 * (1. + 1./12 * (dr2/rlistmatrix2)**2)
+        #Vi = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2) #1d array
 
-        print 'AvgBessel'
+        Vir1 = 4./3 * pi * np.fabs(rminmatrix**3 - rmaxmatrix**3)
+        Vir2 = 4./3 * pi * np.fabs(rminmatrix2**3 - rmaxmatrix2**3)
+        Vi = 4./3 * pi * np.fabs(rmin**3 - rmax**3)
+        
+        """ print 'AvgBessel' """
         
         def AvgBessel_q(q, order, (l, skcenter, rmin, rmax)):
             Avg = [avgBessel(l,k,rmin,rmax) for k in skcenter] #2D (kxr)
             q.put((order,Avg))
     
         
-        inputs_bessel = [(0.0,skcenter,rmin,rmax),(2.0,skcenter,rmin,rmax), (4.0,skcenter,rmin,rmax) ]
+        inputs_bessel = [(0.0, skcenter,rmin,rmax),(2.0, skcenter,rmin,rmax), (4.0, skcenter,rmin,rmax) ]
 
         B_queue = Queue()
         B_processes = [Process(target=AvgBessel_q, args=(B_queue,z[0], z[1])) for z in zip(range(3), inputs_bessel)]
@@ -1491,7 +1702,7 @@ class RSD_covariance(error_analysis):
         Bessels = [B_queue.get() for pB in B_processes]
         Bessels.sort()
         Bessel_list = [ B[1] for B in Bessels] #2D bessel, (kxr)
-        print 'bessel_process'
+        """ print 'bessel_process' """
 
         """
         avgBesselmatrix03D = np.array([ Bessel_list[0] for r in rcenter]).swapaxes(0,1)
@@ -1503,7 +1714,7 @@ class RSD_covariance(error_analysis):
         avgBesselmatrix2 = np.array(Bessel_list[1])
         avgBesselmatrix4 = np.array(Bessel_list[2])
 
-        print 'Add'
+        """ print 'Add' """
         matrix1, matrix2 = np.mgrid[0:len(skcenter), 0:len(rcenter)]
         Volume_double = Vir1 * Vir2
 
@@ -1515,7 +1726,7 @@ class RSD_covariance(error_analysis):
             relist = []
             for i in range(len(rcenter)/2):
                 avgBmatrix = np.array(avgBessel1[:, i])[matrix1]
-                re = simps(Rint_result * avgBmatrix * avgBessel2, skcenter, axis=0)
+                re = romb(Rint_result * avgBmatrix * avgBessel2, dx = sdlnk, axis=0)
                 relist.append(re)
             FirstTerm = relist/ Volume_double[0:len(rcenter)/2,:] #2D
             if l1 == l2:
@@ -1537,7 +1748,7 @@ class RSD_covariance(error_analysis):
             relist = []
             for i in range(len(rcenter)/2, len(rcenter)):
                 avgBmatrix = np.array(avgBessel1[:, i])[matrix1]
-                re = simps(Rint_result * avgBmatrix * avgBessel2, skcenter, axis=0)
+                re = romb(Rint_result * avgBmatrix * avgBessel2, dx = sdlnk, axis=0)
                 relist.append(re)
             FirstTerm = relist/ Volume_double[len(rcenter)/2:len(rcenter),:] #2D
             if l1 == l2:
@@ -1610,8 +1821,19 @@ class RSD_covariance(error_analysis):
         self.covariance22 = np.vstack((Total[3], Total[9]))
         self.covariance24 = np.vstack((Total[4], Total[10]))
         self.covariance44 = np.vstack((Total[5], Total[11]))
+        """
+        def symmetrize(cov):
+            
+            for i in range(len(cov.diagonal())):
+                for j in range(len(cov.diagonal())):
+                    cov[j,i] = cov[i,j]
+            return cov
 
-        print 'RSD_shell_covariance_AllModes is finished'
+        self.covariance00 = symmetrize(self.covariance00)
+        self.covariance22 = symmetrize(self.covariance22)
+        self.covariance44 = symmetrize(self.covariance44)
+        """
+        #print 'RSD_shell_covariance_AllModes is finished'
         return self.covariance00, self.covariance02, self.covariance04, self.covariance22, self.covariance24, self.covariance44
 
 
@@ -1737,8 +1959,34 @@ class Window( RSD_covariance ):
     def __init__(self, KMIN, KMAX, RMIN, RMAX, n, n2, subN):
         RSD_covariance.__init__(self, KMIN, KMAX, RMIN, RMAX, n, n2, subN)
 
+        InitiateTitle = '\n-------------------------------------------------------------------\
+        \n class window \
+        \nz = 0.0, kN = {}, subN = {}, rN = {} \
+        \ndlnr = {}, dlnk={}, sdlnk={}'.format(self.n, self.subN, self.n2, np.log(self.rlist[1]/self.rlist[2]),self.dlnk, self.sdlnk )
+        print InitiateTitle
 
 
+
+    def PowerCovMatrix( self ):
+        
+        # NO RSD
+        """ note: survey volume definition """
+        kcenter, dlnk, Vs, nn = self.kcenter, self.dlnk, self.Vs, self.nn
+        dk = self.dk
+        Shell_avg_bandpower = self.Shell_avg_band()
+
+        V = 4./3 * np.pi * self.RMAX**3
+        PowerCovariance = np.zeros((len(kcenter),len(kcenter)))
+        Vi = 4 * pi * kcenter**2 * dk + 1./3 * pi * (dk)**3
+        PowerCov = 2./V * (Shell_avg_bandpower + 1./nn)**2 /Vi * (2 * pi)**3
+        #PowerCov = (Shell_avg_bandpower + 1./nn)**2 / Vi
+        for i in range(len(kcenter)):
+            PowerCovariance[i,i] = PowerCov[i]
+
+        self.PowerCovariance = PowerCovariance
+        return self.PowerCovariance
+            
+            
     def window_tophat_k( self, k, kj ):
         """ 3D spherical top hat weight function
             ki : center of k grid
@@ -1831,7 +2079,6 @@ class Window( RSD_covariance ):
         
         
         # window function shell averaging
-        
         Va = 4 * pi * kcenter**2 * dk * (1. + 1./12 * (dk/kcenter)**2)
         
         weightj = self.window_tophat_k(kmatrix, kjmatrix)
@@ -1888,7 +2135,7 @@ class Window( RSD_covariance ):
             pdf=PdfPages( pdfname )
             pdf.savefig(fig)
             pdf.close()
-        window_plotting()
+        #window_plotting()
         
         
         self.Signal_P = np.array(signal_list) /normali_factor_matrix
@@ -1899,6 +2146,155 @@ class Window( RSD_covariance ):
         return self.windowed_Power
 
 
+
+    def windowed_P2(self):
+        
+        """ C_ij = S_ij + N_ij """
+        
+        klist = self.klist
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        skbin = self.skbin
+        dk = self.dk
+        mulist = self.mulist
+        dlnk = self.dlnk
+        matterpower = self.RealPowerBand
+        
+        matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(skcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
+        matrix7, matrix8 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        
+        kmatrix = skcenter[matrix1]
+        kjmatrix = skcenter[matrix2]
+        
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        
+        # window function shell averaging
+        Va = 4 * pi * kcenter**2 * dk * (1. + 1./12 * (dk/kcenter)**2)
+        
+        weightj = self.window_tophat_k(kmatrix, kjmatrix)
+        np.fill_diagonal(weightj, diagonal)
+        
+        weightj_list=[]
+        for i in range(len(kcenter)):
+            sk = skcenter[i*self.subN:i*self.subN+self.subN]
+            skmatrix = sk[matrix4]
+            weightj_cut = weightj[:,i*self.subN:i*self.subN+self.subN]
+            int = simps(4 * np.pi * skmatrix**2 * weightj_cut ,skmatrix, axis=1 )
+            weightj_list.append(int)
+        
+        shell_avg_weightj = np.transpose(np.array(weightj_list)) /Va[matrix6]
+        
+        
+        kmatrix2 = skcenter[matrix5]
+        Pmatrix = matterpower[matrix5]
+        normali_factor = simps(kmatrix2**2/(2*pi**2) * shell_avg_weightj**2, kmatrix2, axis=0 )
+        #normali_factor = simps(4 * pi * kmatrix2**2 * shell_avg_weightj**2, kmatrix2, axis=0 )
+        signal_list = []
+        noise_list=[]
+        for i in range(len(kcenter)):
+            
+            #weightj = self.window_tophat_k(kmatrix, kjmatrix)
+            #np.fill_diagonal( weightj, diagonal )
+            window_matrix = shell_avg_weightj * shell_avg_weightj[:, i][matrix5]
+            #normali_factor_j = normali_factor_i[i] * np.ones(len(kcenter)) #simps(kmatrix2**2/(2*pi**2) * shell_avg_weightj[:, i][matrix5]**2, kmatrix2, axis=0 )
+            signal = simps( kmatrix2**2/(2*pi**2) * Pmatrix * window_matrix, kmatrix2, axis=0 )
+            noise = 1./self.nn * simps( kmatrix2**2/(2*pi**2) * window_matrix, kmatrix2, axis=0 )
+            signal_list.append(signal)
+            noise_list.append(noise)
+        
+        normali_factor_i = normali_factor[matrix7]
+        normali_factor_j = normali_factor[matrix8]
+        normali_factor_matrix = np.sqrt(normali_factor_i * normali_factor_j)
+        
+        def window_plotting():
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_pdf import PdfPages
+            fig = plt.figure()
+            for i in np.arange(30, self.n, 2):
+                
+                test_weightj = self.window_tophat_k(skcenter[matrix5], kcenter[matrix6])
+                window_i = shell_avg_weightj[:, i]**2
+                normalized_window_i = window_i/normali_factor_matrix[i,i]
+                plt.plot( self.skcenter, normalized_window_i, label='i = {}'.format(i))
+            plt.legend(loc=1)
+            plt.xlim(0.01, 0.5)
+            plt.title('Top hat window function W_ii(k) in Fourier space ( Rmax = 2000 Mpc/h )\n i : index of k grid')
+            #plt.show()
+            pdfname = 'normalized.pdf'
+            print ' pdf file saved : ', pdfname
+            pdf=PdfPages( pdfname )
+            pdf.savefig(fig)
+            pdf.close()
+        #window_plotting()
+        
+        
+        self.Signal_P = np.array(signal_list) /normali_factor_matrix
+        self.Noise_P = np.array(noise_list) /normali_factor_matrix
+        
+        self.windowed_Power = self.Signal_P + self.Noise_P
+        
+        return self.windowed_Power
+    
+    
+    
+    def windowed_P3(self):
+        
+        """ C_ij = S_ij + N_ij """
+        """skcenter, no shell avg"""
+        
+        klist = self.klist
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        skbin = self.skbin
+        dk = self.dk
+        mulist = self.mulist
+        dlnk = self.dlnk
+        matterpower = self.RealPowerBand
+        
+        matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(skcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
+        matrix7, matrix8 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        
+        kmatrix = skcenter[matrix1]
+        kjmatrix = skcenter[matrix2]
+        
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        
+        # window function shell averaging
+        Va = 4 * pi * kcenter**2 * dk * (1. + 1./12 * (dk/kcenter)**2)
+        
+        weightj = self.window_tophat_k(kmatrix, kjmatrix)
+        np.fill_diagonal(weightj, diagonal)
+        normali_factor = simps(kmatrix**2/(2*pi**2) * weightj**2, kmatrix, axis=0 )
+        normal_weight = weightj/sqrt(normali_factor)
+        Pmatrix = matterpower[matrix1]
+        
+        
+        signal_list = []
+        for i in range(len(skcenter)):
+            signal = self.sdk[i] * skcenter[i]**2/(2*pi**2) * (matterpower[i] + 1./self.nn) * normal_weight * normal_weight[:,i]
+            
+            #noise = 1./self.nn * simps( kmatrix2**2/(2*pi**2) * window_matrix, kmatrix2, axis=0 )
+            signal_list.append(signal)
+            #noise_list.append(noise)
+
+        
+        self.windowed_Power3 = np.array(signal_list)
+        
+        return self.windowed_Power3
+    
+    
+    
+    
     def windowed_Xi(self):
         
         """ C_ij = S_ij + N_ij """
@@ -1933,15 +2329,63 @@ class Window( RSD_covariance ):
         self.Signal_Xi = np.array([ simps(kmatrix**2/(2 * pi**2) * Pmatrix * AvgBesselmatrix1 * AvgBesselmatrix1[:, i][matrix1], kmatrix, axis=0 )/V for i in range(len(rcenter)) ])
         self.Noise_Xi = 1./(self.nn * V) / Vir * np.identity(len(rcenter))# diagonal
         
-        
-        
-        
-        
         self.windowed_Xiance = self.Signal_Xi + self.Noise_Xi
         
         return self.windowed_Xiance
 
 
+
+    def windowed_Xi2(self):
+        
+        """ C_ij = S_ij + N_ij """
+        
+        klist = self.klist
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        skbin = self.skbin
+        dk = self.dk
+        mulist = self.mulist
+        dlnk = self.dlnk
+        rcenter = self.rcenter
+        dr = self.dr
+        rmin = self.rmin
+        rmax = self.rmax
+        matterpower = self.RealPowerBand
+        #Pmlist = self.Shell_avg_band()
+        
+        matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(rcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(rcenter),0:len(rcenter)]
+        kmatrix = skcenter[matrix1]
+        Pmatrix = matterpower[matrix1]
+        rmatrix = rcenter[matrix2]
+        rminmatrix = rmin[matrix2]
+        rmaxmatrix = rmax[matrix2]
+        
+        R = self.RMAX  #subtract rmin ? check
+        V = 4./3 * pi * R**3
+        
+        Vir = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2)
+        AvgBesselmatrix1 = avgBessel(0.0,kmatrix,rminmatrix,rmaxmatrix)/Vir[matrix2]
+        
+        
+        # no shell average for C_signal
+        xmatrix = np.fabs(rcenter[matrix3]-rcenter[matrix4])
+        Signal_Xi_list = []
+        for i in range(len(rcenter)):
+            for j in range(len(rcenter)):
+        
+                Bessel_matrix = sbess( skcenter * xmatrix[i,j] ,0.0)
+                int = 1./V * (4./3 * np.pi) * simps(skcenter**2 / (2 * pi)**2 * matterpower * Bessel_matrix * (R-xmatrix[i,j])**3, skcenter )
+                Signal_Xi_list.append(int)
+                #self.Signal_Xi = np.array([ simps(kmatrix**2/(2 * pi**2) * Pmatrix * AvgBesselmatrix1 * AvgBesselmatrix1[:, i][matrix1], kmatrix, axis=0 )/V for i in range(len(rcenter)) ])
+        self.Signal_Xi = np.array(Signal_Xi_list).reshape(len(rcenter), len(rcenter))
+        self.Noise_Xi = 1./(self.nn * V) / Vir * np.identity(len(rcenter))# diagonal
+        
+        self.windowed_Xiance = self.Signal_Xi + self.Noise_Xi
+        
+        return self.windowed_Xiance
+    
+    
 
     def dPdp(self):
         
@@ -1954,7 +2398,7 @@ class Window( RSD_covariance ):
         matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(skcenter)]
         matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
         matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
-        matrix7, matrix8 = np.mgrid[0:self.subN,0:len(skcenter)]
+        matrix7, matrix8 = np.mgrid[0:self.subN, 0:len(skcenter)]
         matrix9, matrix10 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
         matrix11, matrix12 = np.mgrid[0:len(kcenter), 0:self.subN]
         
@@ -1997,7 +2441,7 @@ class Window( RSD_covariance ):
             dCdp_list.append(int)
         
         dCdp_list = np.transpose(np.array(dCdp_list))
-        dPdp = (dCdp_list.diagonal()/normali_factor/Va) * np.identity(len(kcenter))
+        self.dPdp_matrix = (dCdp_list.diagonal()/normali_factor/Va) * np.identity(len(kcenter))
         
         
     
@@ -2034,11 +2478,115 @@ class Window( RSD_covariance ):
         dCdp_list.append(int)
         dPdp = np.array(dCdp_list) * np.identity(len(kcenter)) / normali_factor_matrix
         """
-        return dPdp
+        return self.dPdp_matrix
 
 
 
 
+    def dPdp2(self):
+        
+        from numpy.linalg import pinv
+        
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        dk = self.dk
+        
+        matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(skcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
+        matrix7, matrix8 = np.mgrid[0:self.subN,0:len(skcenter)]
+        matrix9, matrix10 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        matrix11, matrix12 = np.mgrid[0:len(kcenter), 0:self.subN]
+        
+        kmatrix = skcenter[matrix1]
+        kjmatrix = skcenter[matrix2]
+        kkmatrix1 = kcenter[matrix9]
+        kkmatrix2 = kcenter[matrix10]
+        
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        # window function shell averaging
+        weight = self.window_tophat_k(kmatrix, kjmatrix)
+        #weightj_smallbin = self.window_tophat_k(kkmatrix1, kkmatrix2)
+        np.fill_diagonal(weight, diagonal)
+        #np.fill_diagonal(weightj_smallbin, diagonal)
+        Va = 4 * pi * kcenter**2 * dk * (1. + 1./12 * (dk/kcenter)**2)
+        
+        normali_factor = simps( kmatrix**2/(2*pi**2) * weight**2, kmatrix, axis=0)
+        normal_weight = weight / np.sqrt(normali_factor)[matrix2]
+        
+        
+        integral = []
+        for i in range(len(kcenter)):
+            
+            sk = skcenter[i*self.subN : i*self.subN+self.subN]
+            skmatrix = sk[matrix7]
+            weight_cut = normal_weight[i*self.subN:i*self.subN+self.subN,:]
+            int = simps( skmatrix**2/(2*pi**2) * weight_cut**2, skmatrix, axis=0 )
+            integral.append(int)
+        self.dPdp_matrix = np.array(integral)
+
+        return self.dPdp_matrix
+
+
+
+    def dPdp3(self):
+        """ kcenter """
+        
+        from numpy.linalg import pinv
+        
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        dk = self.dk
+        
+        matrix1, matrix2 = np.mgrid[0:len(kcenter),0:len(kcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
+        matrix7, matrix8 = np.mgrid[0:self.subN,0:len(skcenter)]
+        matrix9, matrix10 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        matrix11, matrix12 = np.mgrid[0:len(kcenter), 0:self.subN]
+        
+        kmatrix = skcenter[matrix1]
+        kjmatrix = skcenter[matrix2]
+        kkmatrix1 = kcenter[matrix9]
+        kkmatrix2 = kcenter[matrix10]
+        
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        # window function shell averaging
+        weight = self.window_tophat_k(kmatrix, kjmatrix)
+        #weightj_smallbin = self.window_tophat_k(kkmatrix1, kkmatrix2)
+        np.fill_diagonal(weight, diagonal)
+        #np.fill_diagonal(weightj_smallbin, diagonal)
+        Va = 4 * pi * kcenter**2 * dk * (1. + 1./12 * (dk/kcenter)**2)
+        
+        normali_factor = simps( kmatrix**2/(2*pi**2) * weight**2, kmatrix, axis=0)
+        normal_weight = weight / np.sqrt(normali_factor)[matrix2]
+        
+        int = self.dk[matrix1] * kmatrix**2/(2 * pi**2) * normal_weight**2
+
+        self.dPdp3_matrix = np.array(int)
+        
+
+        """
+            dCdp_list=[]
+            for i in range(len(kcenter)):
+            sk = skcenter[i*self.subN:i*self.subN+self.subN]
+            skmatrix = sk[matrix12]
+            integral_cut = integral[:, i*self.subN:i*self.subN+self.subN]
+            int = simps(4 * np.pi * skmatrix**2 * integral_cut, skmatrix, axis=1)
+            dCdp_list.append(int)
+            
+            dCdp_list = np.transpose(np.array(dCdp_list))
+            dPdp = (dCdp_list.diagonal()/normali_factor/Va) * np.identity(len(kcenter))
+            """
+        return self.dPdp3_matrix
+    
+    
     def dCdp(self):
         """ C,a = dC_ij / dp_a """
         """ weight : top hat """
@@ -2149,6 +2697,55 @@ class Window( RSD_covariance ):
 
 
 
+    def dCXidp2(self):
+        """ C,a = dCxi_ij / dp_a """
+        """ weight : top hat """
+        
+        # No shell avg
+        
+        from numpy.linalg import pinv
+        from numpy import pi
+        from sbess import sbess
+        sbess = np.vectorize(sbess)
+        
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        rcenter = self.rcenter
+        dr = self.dr
+        rmin = self.rmin
+        rmax = self.rmax
+        
+        
+        matrix1, matrix2 = np.mgrid[0:self.subN , 0:len(rcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(rcenter), 0:len(rcenter)]
+        rminmatrix = rmin[matrix2]
+        rmaxmatrix = rmax[matrix2]
+        
+        R = self.RMAX
+        V = 4./3 * pi * R**3
+        Vir = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2)
+        
+        xmatrix = np.fabs(rcenter[matrix3] - rcenter[matrix4])
+        
+        dCdp_list = []
+        for i in range(len(kcenter)):
+            sk = skcenter[i*self.subN : i*self.subN+self.subN]
+            skmatrix = sk[matrix1]
+            #AvgBesselmatrix = avgBessel(0.0,skmatrix,rminmatrix,rmaxmatrix)/Vir[matrix2]
+            list = []
+            for j in range(len(rcenter)):
+                for k in range(len(rcenter)):
+                    Bessel_matrix = sbess( sk * xmatrix[j,k], 0.0)
+                    int = simps( sk**2/(2*pi**2) * Bessel_matrix * (R - xmatrix[j,k]), sk )
+                    list.append(int)
+                                
+            dCdp_a = np.array(list).reshape(len(rcenter),len(rcenter))
+            dCdp_list.append(dCdp_a)
+        dCdp_list = np.array(dCdp_list)/V * (4./3 * np.pi)
+        return dCdp_list
+
+
+
     def Quadratic_Fisher(self, Cov, dCov):
         
         from numpy.linalg import pinv
@@ -2198,7 +2795,8 @@ class Window( RSD_covariance ):
 
 
 
-    def Covaiance_window(self):
+    def Covariance_window(self):
+        """ c_p doesn't work.... need to be fixed """
         
         klist = self.klist
         kcenter = self.kcenter
@@ -2210,7 +2808,7 @@ class Window( RSD_covariance ):
         matterpower = self.RealPowerBand
         
         matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(skcenter)]
-        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix3, matrix4 = np.mgrid[0:self.subN, 0:len(kcenter)]
         matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
         matrix7, matrix8 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
         
@@ -2228,47 +2826,169 @@ class Window( RSD_covariance ):
         
         weightj = self.window_tophat_k(kmatrix, kjmatrix)
         np.fill_diagonal(weightj, diagonal)
+        normali_factor = simps(kmatrix**2/(2*pi**2) * weightj**2, kmatrix, axis=0 )
+        normal_weight = weightj/np.sqrt(normali_factor)[matrix1]
         
+        weight_list = np.transpose(np.array([normal_weight[i*self.subN,:] for i in range(len(skcenter)/self.subN )]))
+        
+       
         weightj_list=[]
-        squared_weightj_list=[]
         for i in range(len(kcenter)):
             sk = skcenter[i*self.subN:i*self.subN+self.subN]
-            skmatrix = sk[matrix4]
-            weightj_cut = weightj[:,i*self.subN:i*self.subN+self.subN]
-            int = simps(4 * np.pi * skmatrix**2 * weightj_cut ,skmatrix, axis=1 )
-            int2 = simps(4 * np.pi * skmatrix**2 * weightj_cut**2 ,skmatrix, axis=1 )
+            skmatrix = sk[matrix3]
+            weightj_cut = weight_list[i*self.subN:i*self.subN+self.subN , :]
+            int = simps(4 * np.pi * skmatrix**2 * weightj_cut ,skmatrix, axis=0 )
             weightj_list.append(int)
-            squared_weightj_list.append(int2)
+            #squared_weightj_list.append(int2)
         
-        shell_avg_weightj = np.transpose(np.array(weightj_list)) /Va[matrix6]
-        squared_shell_avg_weightj = np.transpose(np.array(squared_weightj_list)) /Va[matrix6]
-        
-        
-        kmatrix2 = skcenter[matrix5]
-        Pmatrix = matterpower[matrix5]
-        normali_factor = simps(kmatrix2**2/(2*pi**2) * shell_avg_weightj**2, kmatrix2, axis=0 )
-        normali_factor_i = normali_factor[matrix7]
-        normali_factor_j = normali_factor[matrix8]
-        normali_factor_matrix = np.sqrt(normali_factor_i * normali_factor_j)
-        
+        #shell_avg_weightj = np.array(weightj_list) /Va[matrix8]
+        squared_shell_avg_weightj = np.transpose(np.array(weightj_list)) /Va[matrix8]
+
+        kmatrix2 = kcenter[matrix7]
+        Pmmatrix = self.Pmlist[matrix7]
         list = []
         for i in range(len(kcenter)):
             
-            squared_window_matrix = squared_shell_avg_weightj * squared_shell_avg_weightj[:, i][matrix5]
-            signal = 2./V * simps( kmatrix2**2/(2*pi**2) * (Pmatrix + 1./self.nn)**2 * squared_window_matrix , kmatrix2, axis=0 )
+            squared_window_matrix = squared_shell_avg_weightj**2 * squared_shell_avg_weightj[:, i][matrix7]**2
+            signal = 2./V * simps( kmatrix2**2/(2*pi**2) * (Pmmatrix + 1./self.nn)**2 * squared_window_matrix , kmatrix2, axis=0 )
             #signal1 = 1./V * simps( kmatrix2**2/(2*pi**2) * (Pmatrix)**2 * squared_window_matrix , kmatrix2, axis=0 )
             #noise = 1./self.nn * simps( kmatrix2**2/(2*pi**2) * window_matrix, kmatrix2, axis=0 )
             list.append(signal)
         #noise_list.append(noise)
         
-        self.covariance_P = np.array(list) /normali_factor_matrix**2
+        self.covariance_P = np.array(list)
         
         return self.covariance_P
 
 
-    def Covaiance_window_Xi(self):
+
+    def Covariance_window2(self):
+        """ c_p, skcenter """
+        
+        klist = self.klist
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        skbin = self.skbin
+        dk = self.dk
+        mulist = self.mulist
+        dlnk = self.dlnk
+        matterpower = self.RealPowerBand
+        
+        matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(skcenter)]
+        #matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        #matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
+        #matrix7, matrix8 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        
+        Pmmatrix = matterpower[matrix1]
+        kmatrix = skcenter[matrix1]
+        kjmatrix = skcenter[matrix2]
+        
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        
+        # window function shell averaging
+        
+        Va = 4 * pi * kcenter**2 * dk * (1. + 1./12 * (dk/kcenter)**2)
+        
+        weight2 = self.window_tophat_k(kmatrix, kjmatrix)  # (k-kj)
+        np.fill_diagonal(weight2, diagonal)
+        normali_factor2 = simps(kmatrix**2/(2*pi**2) * weight2**2, kmatrix, axis=0 )
+        normal_weight2 = weight2/ np.sqrt(normali_factor2)[matrix2]
+        
+        
+        # multi processing -------------------------------------------
+        
+        from multiprocessing import Queue, Process
+        
+        max_process = 12
+        print 'multi_processing for k loop : ', max_process, ' workers'
+        numberlist_k = np.arange(len(self.skcenter))
+        numberlist_k_split = np.array_split(numberlist_k, max_process)
+
+        def loop(q, order, input_list):
+            
+            int_list = []
+            for i in input_list:
+                int = simps(kmatrix**2 / (2*np.pi**2) * (Pmmatrix + 1./self.nn)**2 * normal_weight2**2 * (normal_weight2[:,i][matrix1]**2 ), kmatrix, axis=0 )
+                int_list.append(int)
+            q.put(( order, np.array(int_list) ))
+        
+        loop_queue = Queue()
+        loop_processes = [Process(target=loop, args=(loop_queue, z[0], z[1])) for z in zip(range(max_process+1), numberlist_k_split)]
+        
+        for p in loop_processes:
+            p.start()
+
+        loop_result = [loop_queue.get() for p in loop_processes]
+        loop_result.sort()
+        loop_result_list = [ loop[1] for loop in loop_result ]
+        
+        loops = loop_result_list[0]
+        for i in range(1, max_process):
+            loops = np.concatenate((loops, loop_result_list[i]), axis = 0 )
+        # multi processing end -------------------------------------------
+
+        self.Covariance_window_PP_result = 2./V * np.array(loops)
+
+        return self.Covariance_window_PP_result
     
+    
+    
+    def Covariance_window3(self):
+        """ c_p, kcenter """
+        
+        klist = self.klist
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        skbin = self.skbin
+        dk = self.dk
+        mulist = self.mulist
+        dlnk = self.dlnk
+        matterpower = self.RealPowerBand
+        
+        matrix1, matrix2 = np.mgrid[0:len(kcenter),0:len(kcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(kcenter)]
+        matrix7, matrix8 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        
+        Pmmatrix = self.Pmlist[matrix1]
+        kmatrix = kcenter[matrix1]
+        kjmatrix = kcenter[matrix2]
+        
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        
+        # window function shell averaging
+        
+        Va = 4 * pi * kcenter**2 * dk * (1. + 1./12 * (dk/kcenter)**2)
+        
+        weight2 = self.window_tophat_k(kmatrix, kjmatrix)  # (k-kj)
+        np.fill_diagonal(weight2, diagonal)
+        normali_factor2 = simps(kmatrix**2/(2*pi**2) * weight2**2, kmatrix, axis=0 )
+        normal_weight2 = weight2/ np.sqrt(normali_factor2)[matrix2]
+        
+        list=[]
+        for i in range(len(kcenter)):
+            int = simps(kmatrix**2 / (2*np.pi**2) * (Pmmatrix + 1./self.nn)**2 * normal_weight2**2 * (normal_weight2[:,i][matrix1]**2 ), kmatrix, axis=0  )
+            list.append(int)
+        
+        self.Covariance_window_PP_result = 2./V * np.array(list)
+        
+        return self.Covariance_window_PP_result
+    
+    
+    
+
+    def Covariance_window_Xi(self):
+        """ C_xi """
+        
         from sbess import sbess
+        sbess = np.vectorize(sbess)
+        
         klist = self.klist
         kcenter = self.kcenter
         skcenter = self.skcenter
@@ -2278,6 +2998,9 @@ class Window( RSD_covariance ):
         dlnk = self.dlnk
         matterpower = self.RealPowerBand
         rcenter = self.rcenter
+        dr = self.dr
+        rmin = self.rmin
+        rmax = self.rmax
     
         matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(rcenter)]
         matrix3, matrix4 = np.mgrid[0:len(rcenter), 0:len(rcenter)]
@@ -2288,59 +3011,197 @@ class Window( RSD_covariance ):
     
         R = self.RMAX  #subtract rmin ? check """
         V = 4./3 * pi * R**3
-    
+        Vir = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2)
+        rmatrix = rcenter[matrix2]
+        rminmatrix = rmin[matrix2]
+        rmaxmatrix = rmax[matrix2]
+        
+        sbess = np.vectorize(sbess)
+        #Bessel_matrix1 = sbess(skmatrix * rmatrix ,0.0)
+        #Bessel_matrix2 = sbess(skmatrix * rmatrix2 ,0.0)
+
+        AvgBesselmatrix = avgBessel(0.0,skmatrix,rminmatrix,rmaxmatrix)/Vir[matrix2]
+        
+        
         result = []
         for i in range(len(rcenter)): # for r_a loop
-            #for j in range(len(rcenter)): # for r_b loop
-            spherical_Bessel_matrix = sbess(skmatrix * np.fabs(rcenter - rcenter[i]) ,0.0)
-            int = simps(skmatrix**2 / (2 * np.pi**2) * (Pmmatrix + 1./self.nn)**2 * spherical_Bessel_matrix, skmatrix, axis=0 )
+            
+            int = simps(skmatrix**2 / (2 * np.pi**2) * (Pmmatrix**2 + 2./self.nn * Pmmatrix) * AvgBesselmatrix * AvgBesselmatrix[:,i][matrix1], skmatrix, axis=0 )
             result.append(int)
     
-        print np.shape(result)
-    
-        Rmatrix = (1 - rcenter[matrix3]/R)**3
-        result2 = 4 * (2 * np.pi)**3 /V * Rmatrix * np.transpose(Rmatrix) * np.array(result)
-    
-        return result2
+        signal =  2./V**3 * (4./3 * np.pi)**2 * (R - rcenter[matrix3])**3 * (R - rcenter[matrix4])**3 * np.array(result).reshape(len(rcenter), len(rcenter))
 
+
+        noise = 2./V**3 /self.nn**2 * (4./3 * np.pi)**2 /Vir * (R - rcenter)**6 * np.identity(len(rcenter))
+        
+        self.Covariance_window_Xi_result = signal + noise
+        return self.Covariance_window_Xi_result
+
+
+
+    def Covariance_window_PXi(self):
+        """ Cross covariance Cpxi(k, r) """
+        
+        klist = self.klist
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        skbin = self.skbin
+        dk = self.dk
+        mulist = self.mulist
+        dlnk = self.dlnk
+        rcenter = self.rcenter
+        rmin = self.rmin
+        rmax = self.rmax
+        dr = self.dr
+        matterpower = self.RealPowerBand
+        
+        
+        matrix1, matrix2 = np.mgrid[0:len(skcenter),0:len(skcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix5, matrix6 = np.mgrid[0:len(skcenter), 0:len(rcenter)]
+        matrix7, matrix8 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        
+        Pmmatrix = matterpower[matrix1]
+        kmatrix = skcenter[matrix1]
+        kjmatrix = skcenter[matrix2]
+        
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        
+        # window function shell averaging
+        
+        Vir = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2)
+        
+        weight1 = self.window_tophat_k(kmatrix, -kjmatrix) # (k+kj)
+        weight2 = self.window_tophat_k(kmatrix, kjmatrix)  # (k-kj)
+        np.fill_diagonal(weight2, diagonal)
+        
+        normali_factor1 = simps(kmatrix**2/(2*pi**2) * weight1**2, kmatrix, axis=0 )
+        normali_factor2 = simps(kmatrix**2/(2*pi**2) * weight2**2, kmatrix, axis=0 )
+        
+        normal_weight1 = weight1/ np.sqrt(normali_factor1)[matrix2]
+        normal_weight2 = weight2/ np.sqrt(normali_factor2)[matrix2]
+
+        #Bessel = sbess(skcenter[matrix5] * rcenter[matrix6] ,0.0)
+        AvgBesselmatrix = avgBessel(0.0,skcenter[matrix5],rmax[matrix6],rmax[matrix6])/Vir[matrix6]
+        list=[]
+        for i in range(len(rcenter)):
+            #int = simps(kmatrix**2 / (2*np.pi**2) * (Pmmatrix + 1./self.nn)**2 * normal_weight2**2 * (normal_weight2[:,i][matrix1]**2 + normal_weight1[:,i][matrix1]**2 ), kmatrix, axis=0  )
+            int = simps(kmatrix**2 / (2*np.pi**2) * (Pmmatrix + 1./self.nn)**2 * normal_weight2**2 * 2 * AvgBesselmatrix[:,i][matrix1], kmatrix, axis=0  )
+            list.append(int)
+        
+        self.Covariance_window_PXi_result = 1./V**2 * (4./3 * np.pi) * (R - rcenter[matrix6])**3 * np.transpose(np.array(list))
+        return self.Covariance_window_PXi_result
+
+
+    def Covariance_window_PXi2(self):
+        """ Cross covariance Cpxi(k, r) 
+            kcenter """
+        
+        klist = self.klist
+        kcenter = self.kcenter
+        skcenter = self.skcenter
+        skbin = self.skbin
+        dk = self.dk
+        mulist = self.mulist
+        dlnk = self.dlnk
+        rcenter = self.rcenter
+        rmin = self.rmin
+        rmax = self.rmax
+        dr = self.dr
+        matterpower = self.RealPowerBand
+        
+        
+        matrix1, matrix2 = np.mgrid[0:len(kcenter),0:len(kcenter)]
+        matrix3, matrix4 = np.mgrid[0:len(skcenter), 0:self.subN]
+        matrix5, matrix6 = np.mgrid[0:len(kcenter), 0:len(rcenter)]
+        matrix7, matrix8 = np.mgrid[0:len(kcenter), 0:len(kcenter)]
+        
+        Pmmatrix = self.Pmlist[matrix1]
+        kmatrix = kcenter[matrix1]
+        kjmatrix = kcenter[matrix2]
+        
+        R = self.RMAX  #subtract rmin ? check """
+        V = 4./3 * pi * R**3
+        diagonal = np.sqrt(V)
+        
+        
+        # window function shell averaging
+        
+        Vir = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2)
+        
+        weight1 = self.window_tophat_k(kmatrix, -kjmatrix) # (k+kj)
+        weight2 = self.window_tophat_k(kmatrix, kjmatrix)  # (k-kj)
+        np.fill_diagonal(weight2, diagonal)
+        
+        normali_factor1 = simps(kmatrix**2/(2*pi**2) * weight1**2, kmatrix, axis=0 )
+        normali_factor2 = simps(kmatrix**2/(2*pi**2) * weight2**2, kmatrix, axis=0 )
+        
+        normal_weight1 = weight1/ np.sqrt(normali_factor1)[matrix2]
+        normal_weight2 = weight2/ np.sqrt(normali_factor2)[matrix2]
+        
+        #Bessel = sbess(skcenter[matrix5] * rcenter[matrix6] ,0.0)
+        AvgBesselmatrix = avgBessel(0.0,skcenter[matrix5],rmax[matrix6],rmax[matrix6])/Vir[matrix6]
+        list=[]
+        for i in range(len(rcenter)):
+            #int = simps(kmatrix**2 / (2*np.pi**2) * (Pmmatrix + 1./self.nn)**2 * normal_weight2**2 * (normal_weight2[:,i][matrix1]**2 + normal_weight1[:,i][matrix1]**2 ), kmatrix, axis=0  )
+            int = simps(kmatrix**2 / (2*np.pi**2) * (Pmmatrix + 1./self.nn)**2 * normal_weight2**2 * 2 * AvgBesselmatrix[:,i][matrix1], kmatrix, axis=0  )
+            list.append(int)
+        
+        self.Covariance_window_PXi2_result = 1./V**2 * (4./3 * np.pi) * (R - rcenter[matrix6])**3 * np.transpose(np.array(list))
+        return self.Covariance_window_PXi2_result
 
 
     def dXidp(self):
     
         from numpy.linalg import pinv
         from sbess import sbess
-    
+        sbess = np.vectorize(sbess)
+        
         kcenter = self.kcenter
         skcenter = self.skcenter
         dk = self.dk
         rcenter = self.rcenter
+        dr = self.dr
     
         matrix7, matrix8 = np.mgrid[0:self.subN,0:len(rcenter)]
         matrix9, matrix10 = np.mgrid[0:len(kcenter),0:len(rcenter)]
         rmatrix = rcenter[matrix8]
-    
+        rminmatrix = self.rmin[matrix8]
+        rmaxmatrix = self.rmax[matrix8]
     
         R = self.RMAX  #subtract rmin ? check """
         V = 4./3 * pi * R**3
-    
+        #AvgBesselmatrix = avgBessel(0.0,skmatrix,rminmatrix,rmaxmatrix)/Vir[matrix2]
+        Vir = 4 * pi * rcenter**2 * dr * (1. + 1./12 * (dr/rcenter)**2)
+        Vir = Vir[matrix8]
+        
         dXidp_list = []
         for i in range(len(kcenter)):
         
             sk = skcenter[i*self.subN : i*self.subN+self.subN]
             skmatrix = sk[matrix7]
-            Bessel_matrix = sbess(skmatrix * rmatrix, 0.0)
-            int = simps( skmatrix**2/(2*pi**2) * Bessel_matrix, sk, axis=0 )
+            AvgBesselmatrix = avgBessel(0.0,skmatrix,rminmatrix,rmaxmatrix)/Vir
+            #Bessel_matrix = sbess(skmatrix * rmatrix, 0.0)
+            int = simps( skmatrix**2/(2*pi**2) * AvgBesselmatrix, skmatrix, axis=0 )
             dXidp_list.append(int)
     
-        Rmatrix = (1. - rcenter[matrix10]/R)**3
-        dXidp_matrix = Rmatrix * dXidp_list
-        return dXidp_matrix
+        self.dXidp_matrix = 1./V * (4./3 * np.pi) * (R - rcenter[matrix10])**3 * np.array(dXidp_list)
+        return self.dXidp_matrix
 
 
 
 
 
 
+def symmetrize(cov):
+    
+    for i in range(len(cov.diagonal())):
+        for j in range(len(cov.diagonal())):
+            cov[j,i] = cov[i,j]
+    return cov
 
 
 def get_closest_index_in_data( value, data ):
@@ -2380,15 +3241,15 @@ def avgBessel(l,k,rmin,rmax):
     from sici import sici
     sici = vectorize(sici)
     
-    if l == 0. :
-        result = (4. * pi * (-k * rmax * cos(k * rmax) + k * rmin * cos(k * rmin) + sin(k * rmax) - sin(k * rmin)))/(k**3)
-    elif l == 2. :
-        result = 4.*pi* (k * rmax * cos(k * rmax) - k*rmin*cos(k*rmin)-4*sin(k*rmax) +
+    if l == 0.0 :
+        result = 4. * pi * (-k * rmax * cos(k * rmax) + k * rmin * cos(k * rmin) + sin(k * rmax) - sin(k * rmin))/(k**3)
+    elif l == 2.0 :
+        result = 4. * pi * (k * rmax * cos(k * rmax) - k*rmin*cos(k*rmin)-4*sin(k*rmax) +
                           4*sin(k*rmin) + 3*sici(k * rmax) - 3*sici(k*rmin))/k**3
     else :
-        result = (2.* pi/k**5) * ((105 * k/rmax - 2 * k**3 * rmax) * \
-                                  cos(k * rmax) + (- (105 * k/rmin) + 2 *k**3 *rmin) *\
-                                  cos(k * rmin) + 22 * k**2 * sin(k *rmax) - (105 * sin(k * rmax))/rmax**2 -\
+        result = (2.* pi/k**5) * ((105 * k/rmax - 2 * k**3 * rmax) * cos(k * rmax) +\
+                                  (- 105 * k/rmin + 2 * k**3 * rmin) * cos(k * rmin) +\
+                                  22 * k**2 * sin(k *rmax) - (105 * sin(k * rmax))/rmax**2 -\
                                   22 * k**2 *sin(k * rmin) + (105 * sin(k * rmin))/rmin**2 +\
                                   15 * k**2 * (sici(k * rmax) - sici(k * rmin)))
     return result
@@ -2550,8 +3411,11 @@ def CombineDevXi3(l, matrices):
 def FisherProjection( deriv, CovMatrix ):
     
     """ Projection for Fisher Matrix """
+    inverseC = inv(CovMatrix)
+    #print np.allclose(CovMatrix, np.dot(CovMatrix, np.dot(inverseC, CovMatrix)))
     
-    FisherMatrix = np.dot(np.dot(deriv, inv(CovMatrix)), np.transpose(deriv))
+    FisherMatrix = np.dot(np.dot(deriv, inverseC), np.transpose(deriv))
+    
     for i in range(len(deriv)):
         for j in range(i, len(deriv)):
             FisherMatrix[j,i] = FisherMatrix[i,j]
@@ -2563,18 +3427,28 @@ def FisherProjection_Fishergiven( deriv, FisherM ):
     """ Projection for Fisher Matrix """
     
     FisherMatrix = np.dot(np.dot(deriv, FisherM), np.transpose(deriv))
+    
     for i in range(len(deriv)):
         for j in range(i, len(deriv)):
             FisherMatrix[j,i] = FisherMatrix[i,j]
+    
     
     return FisherMatrix
 
 def FractionalError( param1, param2, CovarianceMatrix  ):
     
-    """ fractional error on Parameter  \sigma P / P """
+    """ marginalized cov : fractional error on Parameter  \sigma P / P """
         
     error = np.sqrt(CovarianceMatrix.diagonal())
     return error[0]/param1, error[1]/param2
+
+
+def Local_FractionalError( param1, FisherMatrix  ):
+    
+    local_error = 1./np.sqrt(np.diagonal(FisherMatrix))/param1
+    """ fractional error on Parameter  \sigma P / P """
+
+    return local_error
 
 
 def FractionalErrorBand( params, CovarianceMatrix  ):
@@ -2840,7 +3714,7 @@ def Linear_plot( base, valuename, *args, **kwargs ):
     ylabel = kwargs.get('ylabel', 'Fractional Error')
     
     #linestyles = ['b-', 'r.', 'g^','c.', 'm--', 'y.', 'k.']
-    linestyles = ['b-', 'r^', 'g.','m-', 'g-', 'y--', 'k--','ro','co', 'mo', 'yo', 'ko']
+    linestyles = ['k-', 'r^', 'r^', 'g.','m-', 'g-', 'y--', 'k--','ro','co', 'mo', 'yo', 'ko']
     ziplist = zip(args, valuename, linestyles)
     
     fig = plt.figure()
@@ -2859,7 +3733,7 @@ def Linear_plot( base, valuename, *args, **kwargs ):
     plt.ylim(ymin, ymax)
     plt.xlabel( basename )
     plt.ylabel(ylabel)
-    plt.legend(loc=3,prop={'size':10})
+    plt.legend(loc=4,prop={'size':10})
     plt.grid(True)
     #plt.show()
     
